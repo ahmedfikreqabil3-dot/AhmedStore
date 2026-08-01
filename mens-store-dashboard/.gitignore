@@ -1,0 +1,11 @@
+# Modern application dependencies and build outputs
+modern-app/node_modules/
+modern-app/dist/
+modern-app/.env.local
+
+# Local store database and backups
+data/
+
+# Local editor and operating system files
+.DS_Store
+Thumbs.db
