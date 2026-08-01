@@ -5,14 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>أحمد ستور | لوحة التحكم المتكاملة</title>
   <meta name="description" content="لوحة تحكم متكاملة لمحل الملابس الرجالية - نظام بيع متكامل" />
-  <!-- PWA -->
-  <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22%D8%A3%D8%AD%D9%85%D8%AF%20%D8%B3%D8%AA%D9%88%D8%B1%22,%22short_name%22:%22%D8%A3%D8%AD%D9%85%D8%AF%20%D8%B3%D8%AA%D9%88%D8%B1%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23080810%22,%22theme_color%22:%22%237c6ef5%22,%22lang%22:%22ar%22,%22dir%22:%22rtl%22}" />
-  <meta name="theme-color" content="#7c6ef5" />
+  <!-- PWA manifest — inline data URI works with file:// -->
+  <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%D8%A3%D8%AD%D9%85%D8%AF%20%D8%B3%D8%AA%D9%88%D8%B1%22%2C%22short_name%22%3A%22%D8%A3%D8%AD%D9%85%D8%AF%20%D8%B3%D8%AA%D9%88%D8%B1%22%2C%22start_url%22%3A%22.%2Findex.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F8FAFC%22%2C%22theme_color%22%3A%22%232563EB%22%2C%22lang%22%3A%22ar%22%2C%22dir%22%3A%22rtl%22%7D" />
+  <meta name="theme-color" content="#2563EB" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="أحمد ستور" />
+  <!-- SheetJS for real Excel export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -50,6 +54,10 @@
         </button>
       </div>
       <div class="login-footer">أحمد ستور &copy; 2025 &nbsp;&middot;&nbsp; جميع الحقوق محفوظة</div>
+      <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--text-muted)">
+        مشكلة في الدخول؟
+        <a href="#" onclick="hardReset();return false" style="color:var(--danger);text-decoration:underline">إعادة تعيين النظام</a>
+      </div>
     </div>
   </div>
 
@@ -236,11 +244,14 @@
           </div>
         </div>
         <div class="topbar-left">
+          <div class="offline-badge" id="offlineBadge">
+            ⚠️ بدون إنترنت
+          </div>
           <div class="date-display" id="dateDisplay"></div>
           <button class="topbar-action-btn" onclick="showPage('pos', document.querySelector('[data-page=pos]'));return false" title="نقطة البيع السريعة">
-            🛒 بيع سريع
+            + بيع جديد
           </button>
-          <button class="appearance-btn" id="appearanceBtn" onclick="toggleTheme()" title="تغيير المظهر (داكن / مضيء)">🌙</button>
+          <button class="appearance-btn" id="appearanceBtn" onclick="toggleTheme()" title="تغيير المظهر">🌙</button>
           <button class="notification-btn" id="notifBtn" onclick="toggleNotifications()">
             🔔
             <span class="notif-badge" id="notifCount">0</span>
@@ -255,15 +266,17 @@
         </div>
       </header>
 
+
       <!-- ======== PAGE: DASHBOARD ======== -->
       <div class="page active" id="page-dashboard">
+        <!-- Row 1: KPIs -->
         <div class="stats-grid">
           <div class="stat-card primary" onclick="showPage('sales',document.querySelector('[data-page=sales]'));return false" style="cursor:pointer">
             <div class="stat-icon-wrap primary-icon">💰</div>
             <div class="stat-info">
               <div class="stat-value" id="totalRevenue">0</div>
               <div class="stat-label">إجمالي الإيرادات</div>
-              <div class="stat-sub">جنيه مصري</div>
+              <div class="stat-sub">كل المبيعات</div>
             </div>
             <div class="stat-sparkline" id="sparkRevenue"></div>
           </div>
@@ -276,28 +289,82 @@
             </div>
             <div class="stat-trend up" id="todayTrend">↑ —</div>
           </div>
-          <div class="stat-card warning" onclick="showPage('products',document.querySelector('[data-page=products]'));return false" style="cursor:pointer">
-            <div class="stat-icon-wrap warning-icon">📦</div>
+          <div class="stat-card purple" onclick="showPage('products',document.querySelector('[data-page=products]'));return false" style="cursor:pointer">
+            <div class="stat-icon-wrap purple-icon">📈</div>
             <div class="stat-info">
-              <div class="stat-value" id="totalProducts">0</div>
-              <div class="stat-label">إجمالي المنتجات</div>
-              <div class="stat-sub" id="totalStock">في المخزون: 0</div>
+              <div class="stat-value" id="todayProfit">0</div>
+              <div class="stat-label">أرباح اليوم</div>
+              <div class="stat-sub" id="todayProfitPct">0% هامش</div>
             </div>
+            <div class="stat-trend neutral" id="profitTrend">—</div>
           </div>
-          <div class="stat-card danger" onclick="showPage('inventory',document.querySelector('[data-page=inventory]'));return false" style="cursor:pointer">
-            <div class="stat-icon-wrap danger-icon">⚠️</div>
+          <div class="stat-card warning" onclick="showPage('customers',document.querySelector('[data-page=customers]'));return false" style="cursor:pointer">
+            <div class="stat-icon-wrap warning-icon">👥</div>
             <div class="stat-info">
-              <div class="stat-value" id="lowStockCount">0</div>
-              <div class="stat-label">تنبيهات المخزون</div>
-              <div class="stat-sub">منتج يحتاج إعادة تعبئة</div>
+              <div class="stat-value" id="totalCustomers">0</div>
+              <div class="stat-label">العملاء</div>
+              <div class="stat-sub" id="newCustomers">0 جديد هذا الشهر</div>
             </div>
           </div>
         </div>
 
+        <!-- Row 2: BI KPIs -->
+        <div class="bi-grid">
+          <div class="bi-card" onclick="showPage('reports',document.querySelector('[data-page=reports]'));return false" style="cursor:pointer">
+            <div class="bi-icon primary-icon">📊</div>
+            <div class="bi-info">
+              <div class="bi-value" id="monthlyRevenue">0</div>
+              <div class="bi-label">إيرادات الشهر</div>
+              <div class="bi-trend" id="monthlyRevTrend">↑ 0%</div>
+            </div>
+          </div>
+          <div class="bi-card" onclick="showPage('reports',document.querySelector('[data-page=reports]'));return false" style="cursor:pointer">
+            <div class="bi-icon" style="background:var(--success-light);color:var(--success)">💎</div>
+            <div class="bi-info">
+              <div class="bi-value" id="monthlyProfit">0</div>
+              <div class="bi-label">أرباح الشهر</div>
+              <div class="bi-trend up" id="monthlyProfitTrend">↑ 0%</div>
+            </div>
+          </div>
+          <div class="bi-card" onclick="showPage('sales',document.querySelector('[data-page=sales]'));return false" style="cursor:pointer">
+            <div class="bi-icon" style="background:var(--warning-light);color:var(--warning)">🏆</div>
+            <div class="bi-info">
+              <div class="bi-value" id="topProductBI">—</div>
+              <div class="bi-label">أفضل منتج</div>
+              <div class="bi-trend" id="topProductSales">0 مبيعات</div>
+            </div>
+          </div>
+          <div class="bi-card" onclick="showPage('inventory',document.querySelector('[data-page=inventory]'));return false" style="cursor:pointer">
+            <div class="bi-icon" style="background:var(--danger-light);color:var(--danger)">📦</div>
+            <div class="bi-info">
+              <div class="bi-value" id="productStockBI">0</div>
+              <div class="bi-label">إجمالي المخزون</div>
+              <div class="bi-trend" id="stockValueBI">0 ج قيمة</div>
+            </div>
+          </div>
+          <div class="bi-card" onclick="showPage('customers',document.querySelector('[data-page=customers]'));return false" style="cursor:pointer">
+            <div class="bi-icon" style="background:var(--purple-light);color:var(--purple)">⭐</div>
+            <div class="bi-info">
+              <div class="bi-value" id="bestCustomerBI">—</div>
+              <div class="bi-label">أفضل عميل</div>
+              <div class="bi-trend" id="bestCustomerTotal">0 ج مشتريات</div>
+            </div>
+          </div>
+          <div class="bi-card" onclick="showPage('customers',document.querySelector('[data-page=customers]'));return false" style="cursor:pointer">
+            <div class="bi-icon" style="background:var(--danger-light);color:var(--danger)">💳</div>
+            <div class="bi-info">
+              <div class="bi-value" id="totalDebtsBI">0</div>
+              <div class="bi-label">المديونيات</div>
+              <div class="bi-trend" id="debtorsCount">0 عميل</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: Charts -->
         <div class="charts-row">
           <div class="chart-card large">
             <div class="chart-header">
-              <h3>📈 مبيعات الفترة</h3>
+              <h3>📈 مبيعات 30 يوم</h3>
               <div class="chart-actions">
                 <button class="chart-btn active" onclick="updateChart('week',this)">أسبوع</button>
                 <button class="chart-btn" onclick="updateChart('month',this)">شهر</button>
@@ -306,27 +373,58 @@
             </div>
             <canvas id="salesChart" height="180"></canvas>
           </div>
-          <div class="chart-card small">
-            <div class="chart-header"><h3>🥧 الفئات الأكثر مبيعاً</h3></div>
+          <div class="chart-card">
+            <div class="chart-header"><h3>🥧 توزيع الفئات</h3></div>
             <canvas id="categoryChart" height="160"></canvas>
             <div class="chart-legend" id="categoryLegend"></div>
           </div>
         </div>
 
+        <!-- Row 4: Quick Actions -->
+        <div class="quick-actions">
+          <button class="qa-btn" onclick="showPage('pos',document.querySelector('[data-page=pos]'));return false">
+            <span class="qa-icon success-icon">🛒</span>
+            <span class="qa-label">بيع جديد</span>
+          </button>
+          <button class="qa-btn" onclick="openProductModal()">
+            <span class="qa-icon primary-icon">➕</span>
+            <span class="qa-label">إضافة منتج</span>
+          </button>
+          <button class="qa-btn" onclick="showPage('reports',document.querySelector('[data-page=reports]'));return false">
+            <span class="qa-icon warning-icon">📈</span>
+            <span class="qa-label">تقرير سريع</span>
+          </button>
+          <button class="qa-btn" onclick="openCustomerModal()">
+            <span class="qa-icon purple-icon">👤</span>
+            <span class="qa-label">عميل جديد</span>
+          </button>
+          <button class="qa-btn" onclick="showPage('warehouses',document.querySelector('[data-page=warehouses]'));return false">
+            <span class="qa-icon" style="background:var(--info-light);color:var(--info)">🏪</span>
+            <span class="qa-label">إدارة الفروع</span>
+          </button>
+          <button class="qa-btn" onclick="showPage('expenses',document.querySelector('[data-page=expenses]'));return false">
+            <span class="qa-icon danger-icon">💸</span>
+            <span class="qa-label">مصروف</span>
+          </button>
+        </div>
+
+        <!-- Row 5: Tables -->
         <div class="bottom-row">
           <div class="table-card">
             <div class="card-header">
               <h3>🕐 آخر المبيعات</h3>
               <button class="btn-link" onclick="showPage('sales',document.querySelector('[data-page=sales]'));return false">عرض الكل ←</button>
             </div>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>الفاتورة</th><th>العميل</th><th>المنتجات</th><th>المبلغ</th><th>الدفع</th>
-                </tr>
-              </thead>
-              <tbody id="recentSalesBody"></tbody>
-            </table>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>العميل</th><th>المنتجات</th><th>المبلغ</th><th>الدفع</th>
+                  </tr>
+                </thead>
+                <tbody id="recentSalesBody"></tbody>
+              </table>
+            </div>
           </div>
           <div class="table-card">
             <div class="card-header">
@@ -341,8 +439,11 @@
       <!-- ======== PAGE: POS ======== -->
       <div class="page" id="page-pos">
         <!-- POS Quick Shortcuts Bar -->
-        <div class="pos-shortcuts-bar">
-          <span class="pos-shortcut-hint">⌨️ <kbd>Ctrl+Enter</kbd> إتمام البيع &nbsp;|&nbsp; <kbd>Del</kbd> مسح السلة &nbsp;|&nbsp; <kbd>Ctrl+F</kbd> بحث</span>
+        <div class="pos-shortcuts-bar" style="justify-content: space-between; align-items: center;">
+          <div style="display:flex; gap:12px; align-items:center;">
+            <span class="pos-shortcut-hint">⌨️ <kbd>Ctrl+Enter</kbd> الدفع &nbsp;|&nbsp; <kbd>Del</kbd> مسح السلة</span>
+            <button class="btn-secondary" onclick="openShiftModal()" style="padding:4px 10px; font-size:11px; font-weight:700; border-radius:6px; background:rgba(255, 79, 100, 0.1); color:var(--danger); border:1px solid rgba(255, 79, 100, 0.3);">🔒 تقفيل الوردية</button>
+          </div>
           <div class="pos-header-stats">
             <span>🛒 <strong id="posCartCount">0</strong> منتج في السلة</span>
             <span>💰 إجمالي: <strong id="posHeaderTotal">0 ج</strong></span>
@@ -363,7 +464,7 @@
                 <button class="pos-search-clear" onclick="clearPOSSearch()" id="posClearBtn" style="display:none">✕</button>
                 <button class="btn-primary" onclick="openBarcodeScanner()" style="padding:10px;border-radius:8px;height:38px;min-width:42px;display:flex;align-items:center;justify-content:center" title="مسح باركود بالكاميرا" type="button">📷</button>
               </div>
-              <div class="pos-categories" id="posCategories"></div>
+              <div class="pos-categories" id="posCategories" style="display:none"></div>
               <!-- Search Results List -->
               <div class="pos-search-results" id="posSearchResults"></div>
               <!-- Hint when search empty -->
@@ -395,6 +496,12 @@
                 </div>
               </div>
             </div>
+
+            <!-- Mobile cart toggle -->
+            <button class="pos-cart-toggle" id="posCartToggle" onclick="toggleMobileCart()" style="display:none">
+              🛒 عرض السلة والمتابعة
+              <span class="cart-count-badge" id="mobileCartCount" style="background:white;color:var(--primary)">0</span>
+            </button>
 
           </div>
 
@@ -445,13 +552,15 @@
             </div>
 
             <!-- Action Buttons -->
-            <button class="btn-complete-sale" id="completeSaleBtn" onclick="openPaymentModal()" style="margin-top:14px">
-              <span>💳 إتمام البيع</span>
-              <kbd style="font-size:10px;opacity:0.7">Ctrl+Enter</kbd>
-            </button>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-              <button onclick="holdCurrentInvoice()" style="border-radius:12px;background:rgba(245,166,35,0.15);border:1px solid rgba(245,166,35,0.5);color:var(--warning);font-weight:700;font-size:13px;cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:center;gap:4px" title="تعليق الفاتورة">⏸️ تعليق</button>
-              <button class="btn-secondary" onclick="saveQuotation()" style="border-radius:12px;font-weight:700;font-size:12px;padding:10px;display:flex;align-items:center;justify-content:center;gap:4px">📄 عرض سعر</button>
+            <div class="pos-action-area">
+              <button class="btn-complete-sale" id="completeSaleBtn" onclick="openPaymentModal()">
+                <span>💳 إتمام البيع</span>
+                <kbd class="pos-kbd">Ctrl+Enter</kbd>
+              </button>
+              <div class="pos-secondary-btns">
+                <button class="pos-btn-hold" onclick="holdCurrentInvoice()" title="تعليق الفاتورة">⏸️ تعليق</button>
+                <button class="pos-btn-quote" onclick="saveQuotation()">📄 عرض سعر</button>
+              </div>
             </div>
 
           </div>
@@ -460,71 +569,122 @@
 
       <!-- ======== PAYMENT CONFIRM MODAL ======== -->
       <div class="modal-overlay" id="paymentConfirmModal">
-        <div class="modal" style="max-width:520px;width:95%">
+        <div class="modal pay-modal">
           <div class="modal-header">
             <h3>💳 تأكيد الدفع وإتمام البيع</h3>
             <button class="modal-close" onclick="closePaymentModal()">✕</button>
           </div>
           <div class="modal-body">
-            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px">
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-                <span style="color:var(--text-secondary)">👤 العميل:</span>
-                <strong id="pmCustomerName">—</strong>
+
+            <!-- Invoice Summary Card -->
+            <div class="pay-summary-card">
+              <div class="pay-summary-row">
+                <span class="pay-summary-label">👤 العميل</span>
+                <strong id="pmCustomerName" class="pay-summary-value">—</strong>
               </div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-                <span style="color:var(--text-secondary)">🛒 عدد الأصناف:</span>
-                <strong id="pmItemsCount">0</strong>
+              <div class="pay-summary-row">
+                <span class="pay-summary-label">🛒 عدد الأصناف</span>
+                <strong id="pmItemsCount" class="pay-summary-value">0</strong>
               </div>
-              <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border);margin-top:4px">
-                <span style="font-size:15px;font-weight:700">💰 الإجمالي:</span>
-                <strong id="pmTotal" style="font-size:22px;color:var(--success)">0.00 ج</strong>
+              <div class="pay-summary-total-row">
+                <span>💰 الإجمالي</span>
+                <strong id="pmTotal" class="pay-summary-total">0.00 ج</strong>
               </div>
             </div>
+
+            <!-- Payment Methods -->
             <div class="payment-label">💳 توزيع المبلغ على طرق الدفع</div>
             <div class="pay-split-container" id="paymentSplitContainer">
               <div class="pay-split-row">
                 <span class="pay-split-icon">💵</span>
                 <span class="pay-split-label">نقداً</span>
-                <input type="number" class="form-control pay-split-input" id="pay-cash-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
+                <input type="number" class="pay-split-input" id="pay-cash-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
                 <span class="pay-split-currency">ج</span>
               </div>
               <div class="pay-split-row">
                 <span class="pay-split-icon">💳</span>
                 <span class="pay-split-label">بطاقة/فيزا</span>
-                <input type="number" class="form-control pay-split-input" id="pay-card-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
+                <input type="number" class="pay-split-input" id="pay-card-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
                 <span class="pay-split-currency">ج</span>
               </div>
               <div class="pay-split-row">
                 <span class="pay-split-icon">📱</span>
                 <span class="pay-split-label">محفظة</span>
-                <input type="number" class="form-control pay-split-input" id="pay-wallet-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
+                <input type="number" class="pay-split-input" id="pay-wallet-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
                 <span class="pay-split-currency">ج</span>
               </div>
               <div class="pay-split-row">
                 <span class="pay-split-icon">⚡</span>
                 <span class="pay-split-label">انستا باي</span>
-                <input type="number" class="form-control pay-split-input" id="pay-instapay-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
+                <input type="number" class="pay-split-input" id="pay-instapay-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
                 <span class="pay-split-currency">ج</span>
               </div>
               <div class="pay-split-row pay-split-credit">
                 <span class="pay-split-icon">📝</span>
                 <span class="pay-split-label">آجل</span>
-                <input type="number" class="form-control pay-split-input" id="pay-credit-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
+                <input type="number" class="pay-split-input" id="pay-credit-amount" placeholder="0.00" min="0" step="0.01" oninput="onPaySplitChange()">
                 <span class="pay-split-currency">ج</span>
               </div>
             </div>
-            <div id="quickCashBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>
-            <button onclick="fillCashRemainder()" type="button" style="width:100%;padding:7px;background:rgba(0,200,150,0.1);border:1px dashed var(--success);border-radius:8px;color:var(--success);font-weight:700;font-size:12px;cursor:pointer;margin-bottom:8px">💵 تعبئة الباقي نقداً</button>
+
+            <!-- Quick Cash Buttons -->
+            <div id="quickCashBtns" class="quick-cash-btns" style="margin:10px 0"></div>
+            <button onclick="fillCashRemainder()" type="button" class="btn-fill-cash">💵 تعبئة الباقي نقداً</button>
+
+            <!-- Running Totals -->
             <div class="pay-split-summary">
-              <div class="pay-split-sum-row"><span>الإجمالي المطلوب:</span><span id="paySplitTotal" style="font-weight:800">0.00 ج</span></div>
-              <div class="pay-split-sum-row"><span>المدفوع:</span><span id="paySplitPaid" style="font-weight:800;color:var(--success)">0.00 ج</span></div>
-              <div class="pay-split-sum-row"><span>الباقي / الفكة:</span><span id="paySplitRemain" style="font-weight:800">0.00 ج</span></div>
+              <div class="pay-split-sum-row"><span>الإجمالي المطلوب:</span><span id="paySplitTotal">0.00 ج</span></div>
+              <div class="pay-split-sum-row"><span>المدفوع:</span><span id="paySplitPaid" style="color:var(--success)">0.00 ج</span></div>
+              <div class="pay-split-sum-row"><span>الباقي / الفكة:</span><span id="paySplitRemain">0.00 ج</span></div>
             </div>
           </div>
-          <div class="modal-footer" style="display:grid;grid-template-columns:1fr 2fr 2fr;gap:8px">
+          <div class="modal-footer pay-modal-footer">
             <button class="btn-secondary" onclick="closePaymentModal()">إلغاء</button>
             <button class="btn-primary" onclick="completeSale()">✅ تأكيد البيع</button>
-            <button class="btn-primary" onclick="completeSaleAndPrint()" style="background:linear-gradient(135deg,var(--success),#00b894)">🖨️ تأكيد وطباعة</button>
+            <button class="btn-success-gradient" onclick="completeSaleAndPrint()">🖨️ تأكيد وطباعة</button>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ====== SHIFT CLOSE MODAL ====== -->
+      <div class="modal-overlay" id="shiftModal">
+        <div class="modal small-modal">
+          <div class="modal-header">
+            <h3>🔒 تقفيل الوردية</h3>
+            <button class="modal-close" onclick="closeShiftModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="background:var(--bg-secondary); border-radius:10px; padding:15px; margin-bottom:15px; font-size:13px;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+                <span style="color:var(--text-secondary)">بداية الوردية:</span>
+                <span id="shiftStartTime" style="font-weight:700;">—</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                <span style="color:var(--text-secondary)">عدد الفواتير:</span>
+                <span id="shiftInvoiceCount" style="font-weight:700; color:var(--primary-light)">0</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                <span style="color:var(--text-secondary)">إجمالي المبيعات (نقدي):</span>
+                <span id="shiftCashSales" style="font-weight:700; color:var(--success)">0 ج</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                <span style="color:var(--text-secondary)">إجمالي المبيعات (فيزا/تحويل):</span>
+                <span id="shiftCardSales" style="font-weight:700; color:var(--success)">0 ج</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+                <span style="color:var(--text-secondary)">المرتجعات والمصروفات:</span>
+                <span id="shiftDeductions" style="font-weight:700; color:var(--danger)">0 ج</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(37,99,235,0.1); padding:8px; border-radius:8px;">
+                <span style="font-weight:700; color:var(--primary-light)">الصافي النقدي بالدرج:</span>
+                <span id="shiftNetCash" style="font-weight:800; font-size:16px; color:var(--primary-light)">0 ج</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer" style="flex-direction:column; gap:10px;">
+            <button class="btn-primary" style="width:100%" onclick="confirmShiftClose()">🔒 تأكيد تقفيل الوردية وطباعة الملخص</button>
+            <button class="btn-secondary" style="width:100%" onclick="closeShiftModal()">إلغاء</button>
           </div>
         </div>
       </div>
@@ -647,7 +807,11 @@
           </div>
           <div class="inv-stat success">
             <div class="inv-stat-icon">💎</div>
-            <div><div class="inv-stat-value" id="invValue">0</div><div class="inv-stat-label">قيمة المخزون (ج)</div></div>
+            <div><div class="inv-stat-value" id="invValue">0</div><div class="inv-stat-label">قيمة المخزون بالتكلفة (ج)</div></div>
+          </div>
+          <div class="inv-stat" style="background:rgba(37,99,235,0.1);border:1px solid rgba(37,99,235,0.3)">
+            <div class="inv-stat-icon">💰</div>
+            <div><div class="inv-stat-value" id="invValueSell" style="color:var(--primary-light)">0</div><div class="inv-stat-label">قيمة المخزون بالبيع (ج)</div></div>
           </div>
         </div>
 
@@ -658,15 +822,23 @@
             <button class="filter-tab" onclick="filterInventory('out',this)">❌ نفد</button>
             <button class="filter-tab" onclick="filterInventory('ok',this)">✅ متاح</button>
           </div>
-          <input type="text" id="inventorySearch" placeholder="🔍 بحث..." oninput="filterInventorySearch()" class="search-input" />
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="inventorySearch" placeholder="🔍 بحث..." oninput="filterInventorySearch()" class="search-input" />
+            <div class="view-toggle">
+              <button class="view-btn active" id="viewGridBtn" onclick="setInventoryView('grid')" title="عرض بطاقات">📇</button>
+              <button class="view-btn" id="viewTableBtn" onclick="setInventoryView('table')" title="عرض جدول">📋</button>
+            </div>
+          </div>
         </div>
 
-        <div class="full-table-wrap">
+        <div class="product-grid" id="productGrid"></div>
+
+        <div class="full-table-wrap" id="inventoryTableWrap">
           <table class="data-table full-table" id="inventoryTable">
             <thead>
               <tr>
-                <th>المنتج</th><th>الفئة</th><th>المقاس</th><th>اللون</th>
-                <th>المخزون</th><th>الحد الأدنى</th><th>قيمة المخزون</th><th>الحالة</th><th>إجراءات</th>
+                <th>#</th><th>المنتج</th><th>الفئة</th><th>المقاس</th><th>اللون</th>
+                <th>المخزون</th><th>الحد الأدنى</th><th>قيمة الشراء</th><th>قيمة البيع</th><th>الحالة</th><th>إجراءات</th>
               </tr>
             </thead>
             <tbody id="inventoryBody"></tbody>
@@ -798,39 +970,7 @@
         </div>
         <div class="customers-grid" id="customersGrid"></div>
 
-        <!-- Customer Modal -->
-        <div class="modal-overlay" id="customerModal">
-          <div class="modal">
-            <div class="modal-header">
-              <h3 id="customerModalTitle">إضافة عميل جديد</h3>
-              <button class="modal-close" onclick="closeCustomerModal()">✕</button>
-            </div>
-            <div class="modal-body">
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>الاسم *</label>
-                  <input type="text" id="cName" class="form-control" placeholder="اسم العميل" />
-                </div>
-                <div class="form-group">
-                  <label>رقم الهاتف</label>
-                  <input type="text" id="cPhone" class="form-control" placeholder="01xxxxxxxxx" />
-                </div>
-                <div class="form-group full-width">
-                  <label>العنوان</label>
-                  <input type="text" id="cAddress" class="form-control" placeholder="عنوان العميل" />
-                </div>
-                <div class="form-group full-width">
-                  <label>ملاحظات</label>
-                  <textarea id="cNotes" class="form-control" rows="2" placeholder="ملاحظات..."></textarea>
-                </div>
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button class="btn-secondary" onclick="closeCustomerModal()">إلغاء</button>
-              <button class="btn-primary" onclick="saveCustomer()">💾 حفظ العميل</button>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       <!-- ======== PAGE: QUOTATIONS ======== -->
@@ -864,76 +1004,86 @@
 
       <!-- ======== PAGE: REPORTS ======== -->
       <div class="page" id="page-reports">
-        <!-- ====== Unified Filter Bar ====== -->
-        <div class="reports-filter-bar">
-          <div class="reports-filter-group">
-            <span class="reports-filter-label">⏱️ الفترة:</span>
-            <div class="report-period-btns">
+
+        <!-- Reports Layout: Sidebar + Main -->
+        <div id="reportsLayout" style="display:flex; flex:1; gap:0; height:100%; overflow:hidden;">
+
+          <!-- Reports Sidebar Menu -->
+          <div id="reportsSidebar" style="width:240px; min-width:200px; background:var(--bg-card); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; flex-shrink:0;">
+            <div style="padding:16px; border-bottom:1px solid var(--border); font-weight:800; font-size:15px; color:var(--primary-light); display:flex; align-items:center; gap:8px; background:var(--bg-secondary);">
+              📊 قائمة التقارير
+            </div>
+            <div style="padding:8px; display:flex; flex-direction:column; gap:2px; flex:1;">
+
+              <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin:8px 8px 4px; letter-spacing:1px;">المبيعات والعملاء</div>
+              <button class="report-nav-item active" onclick="showSpecificReport('sales_items', this)">1. مبيعات بالأصناف</button>
+              <button class="report-nav-item" onclick="showSpecificReport('sales_customers', this)">2. مبيعات العملاء</button>
+              <button class="report-nav-item" onclick="showSpecificReport('sales_invoices', this)">3. مبيعات الفواتير</button>
+              <button class="report-nav-item" onclick="showSpecificReport('sales_category', this)">4. مبيعات حسب الفئة</button>
+              <button class="report-nav-item" onclick="showSpecificReport('returns', this)">5. تقرير المرتجعات</button>
+
+              <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin:12px 8px 4px; letter-spacing:1px;">المشتريات والموردين</div>
+              <button class="report-nav-item" onclick="showSpecificReport('purchases_invoices', this)">6. المشتريات بالفواتير</button>
+              <button class="report-nav-item" onclick="showSpecificReport('purchases_items', this)">7. المشتريات بالأصناف</button>
+              <button class="report-nav-item" onclick="showSpecificReport('purchases_suppliers', this)">8. مشتريات الموردين</button>
+
+              <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin:12px 8px 4px; letter-spacing:1px;">المخزون والمالية</div>
+              <button class="report-nav-item" onclick="showSpecificReport('inventory_balance', this)">9. رصيد المخزن</button>
+              <button class="report-nav-item" onclick="showSpecificReport('expenses', this)">10. تقرير المصروفات</button>
+              <button class="report-nav-item" onclick="showSpecificReport('financial_position', this)">11. قائمة المركز المالي</button>
+              <button class="report-nav-item" onclick="showSpecificReport('cash_flow', this)">12. قائمة التدفقات النقدية</button>
+              <button class="report-nav-item" onclick="showSpecificReport('shift_close', this)">13. تقرير تقفيل الورديات</button>
+            </div>
+          </div>
+
+          <!-- Main Report Content -->
+          <div style="flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--bg-primary);">
+
+            <!-- Filter Bar -->
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-secondary); display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex-shrink:0;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">⏱️ الفترة:</span>
               <button class="filter-tab active" onclick="setReportPeriod('week',this)" id="rp-week">أسبوع</button>
               <button class="filter-tab" onclick="setReportPeriod('month',this)" id="rp-month">شهر</button>
               <button class="filter-tab" onclick="setReportPeriod('year',this)" id="rp-year">سنة</button>
               <button class="filter-tab" onclick="setReportPeriod('all',this)" id="rp-all">الكل</button>
               <button class="filter-tab" onclick="setReportPeriod('custom',this)" id="rp-custom">📅 مخصص</button>
-            </div>
-          </div>
-          <!-- Custom date range (shown only when 'custom' selected) -->
-          <div class="reports-filter-group" id="reportCustomDateRange" style="display:none">
-            <span class="reports-filter-label">من:</span>
-            <input type="date" id="reportDateFrom" class="form-control" style="width:145px;padding:6px 10px;font-size:12px" onchange="applyCustomDateRange()"/>
-            <span class="reports-filter-label">إلى:</span>
-            <input type="date" id="reportDateTo" class="form-control" style="width:145px;padding:6px 10px;font-size:12px" onchange="applyCustomDateRange()"/>
-          </div>
-          <!-- Warehouse filter -->
-          <div class="reports-filter-group">
-            <span class="reports-filter-label">🏪 الفرع:</span>
-            <select id="reportWarehouseSelect" class="form-control" style="width:160px;font-size:12px;padding:6px 10px" onchange="setReportWarehouse(this.value,this)">
-              <option value="all">جميع الفروع</option>
-            </select>
-          </div>
-          <!-- Active filter badge -->
-          <div id="activeFilterBadge" style="display:none;background:rgba(124,110,245,0.15);border:1px solid var(--primary);border-radius:20px;padding:4px 14px;font-size:11px;font-weight:700;color:var(--primary-light);white-space:nowrap"></div>
-          <!-- Export actions -->
-          <div class="reports-filter-group" style="margin-right:auto">
-            <button class="btn-secondary" onclick="exportReportToPDF()" style="font-size:12px;padding:7px 12px">📥 PDF</button>
-            <button class="btn-primary" onclick="printReport()" style="font-size:12px;padding:7px 12px">🖨️ طباعة</button>
-          </div>
-        </div>
 
-        <div class="reports-grid">
-          <div class="report-card span-2">
-            <div class="report-card-header">
-              <div class="report-icon">📊</div>
-              <h3>مبيعات الفترة المحددة</h3>
+              <div id="reportCustomDateRange" style="display:none; gap:8px; align-items:center;">
+                <span style="font-size:12px; color:var(--text-secondary);">من:</span>
+                <input type="date" id="reportDateFrom" class="form-control" style="width:130px;padding:5px 8px;font-size:12px" onchange="applyCustomDateRange()"/>
+                <span style="font-size:12px; color:var(--text-secondary);">إلى:</span>
+                <input type="date" id="reportDateTo" class="form-control" style="width:130px;padding:5px 8px;font-size:12px" onchange="applyCustomDateRange()"/>
+              </div>
+
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">🏪 الفرع:</span>
+              <select id="reportWarehouseSelect" class="form-control" style="width:130px;font-size:12px;padding:5px 10px" onchange="setReportWarehouse(this.value,this)">
+                <option value="all">جميع الفروع</option>
+              </select>
+
+              <div id="activeFilterBadge" style="display:none;background:rgba(37,99,235,0.15);border:1px solid var(--primary);border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700;color:var(--primary-light)"></div>
+
+              <div style="margin-right:auto; display:flex; gap:6px;">
+                <button class="btn-secondary" onclick="exportReportToExcel()" style="font-size:12px;padding:6px 12px;background:rgba(39,174,96,0.1);color:#27ae60;border-color:rgba(39,174,96,0.3)">📊 Excel</button>
+                <button class="btn-secondary" onclick="exportReportToPDF()" style="font-size:12px;padding:6px 12px">📥 PDF</button>
+                <button class="btn-primary" onclick="printReport()" style="font-size:12px;padding:6px 12px">🖨️ طباعة</button>
+              </div>
             </div>
-            <canvas id="monthlyChart" height="120"></canvas>
-          </div>
-          <div class="report-card">
-            <div class="report-card-header">
-              <div class="report-icon">👕</div>
-              <h3>أكثر المنتجات مبيعاً</h3>
+
+            <!-- Report View Area -->
+            <div style="flex:1; overflow-y:auto; padding:20px;">
+              <!-- Report Title + Pills -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding-bottom:12px; border-bottom:1px solid var(--border);">
+                <h2 id="reportViewTitle" style="margin:0; font-size:17px; color:var(--text-primary); font-weight:800;">1. مبيعات بالأصناف</h2>
+                <div id="reportSummaryPills" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+              </div>
+              <!-- Dynamic Content -->
+              <div id="reportViewContent">
+                <div style="text-align:center;padding:60px;color:var(--text-muted)">جاري تحميل التقرير...</div>
+              </div>
+              <!-- Hidden canvas for monthly chart compatibility -->
+              <canvas id="monthlyChart" style="display:none;"></canvas>
             </div>
-            <div id="topProductsList"></div>
-          </div>
-          <div class="report-card">
-            <div class="report-card-header">
-              <div class="report-icon">💰</div>
-              <h3>ملخص الأرباح والخسائر</h3>
-            </div>
-            <div class="profit-summary" id="profitSummary"></div>
-          </div>
-          <div class="report-card">
-            <div class="report-card-header">
-              <div class="report-icon">👥</div>
-              <h3>أفضل العملاء</h3>
-            </div>
-            <div id="topCustomersList"></div>
-          </div>
-          <div class="report-card">
-            <div class="report-card-header">
-              <div class="report-icon">🗂️</div>
-              <h3>مبيعات حسب الفئة</h3>
-            </div>
-            <div id="categoryBreakdown"></div>
+
           </div>
         </div>
       </div>
@@ -995,6 +1145,72 @@
             <h3>📊 إحصائيات النظام</h3>
             <div class="system-stats" id="systemStats"></div>
           </div>
+
+          <!-- Audit Log -->
+          <div class="settings-card">
+            <h3>📋 سجل المراجعة (Audit Log)</h3>
+            <p class="settings-desc">آخر 50 عملية في النظام</p>
+            <div class="audit-log-container" id="auditLogContainer">
+              <div style="text-align:center;color:var(--text-muted);padding:20px">جاري التحميل...</div>
+            </div>
+          </div>
+
+          <!-- Category Management -->
+          <div class="settings-card">
+            <h3>🏷️ إدارة الفئات</h3>
+            <p class="settings-desc">إدارة فئات المنتجات — أضف أو احذف الفئات المستخدمة</p>
+            <div class="category-manager" id="categoryManager"></div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <input type="text" id="newCategoryInput" class="form-control" placeholder="اسم الفئة الجديدة" style="flex:1" />
+              <button class="btn-primary" onclick="addCategory()">➕ إضافة</button>
+            </div>
+          </div>
+
+          <!-- WhatsApp Settings Card -->
+          <div class="settings-card">
+            <h3>💬 إعدادات واتساب</h3>
+            <p class="settings-desc">تفعيل إرسال تفاصيل الفاتورة تلقائياً عبر واتساب بعد كل عملية بيع</p>
+            <div class="form-group">
+              <label class="checkbox-wrap" style="font-size:13px;gap:10px">
+                <input type="checkbox" id="settingWaAutoSend" />
+                تفعيل الإرسال التلقائي بعد إتمام البيع
+              </label>
+            </div>
+            <div class="form-group">
+              <label>قالب الرسالة (اختياري)</label>
+              <textarea id="settingWaTemplate" class="form-control" rows="5"
+                placeholder="اتركه فارغاً للقالب الافتراضي&#10;&#10;المتغيرات المتاحة:&#10;{{customer}} — اسم العميل&#10;{{invoice_id}} — رقم الفاتورة&#10;{{total}} — الإجمالي&#10;{{items}} — أصناف الفاتورة&#10;{{date}} — التاريخ&#10;{{store}} — اسم المحل"></textarea>
+            </div>
+            <div style="background:var(--info-light);border:1px solid var(--info-border);border-radius:8px;padding:10px;font-size:11px;color:var(--info);line-height:1.7">
+              💡 <strong>مثال:</strong> مرحباً {{customer}}، شكراً لشرائك من {{store}}! فاتورة {{invoice_id}} بإجمالي {{total}}
+            </div>
+          </div>
+
+          <!-- Barcode Print Settings Card -->
+          <div class="settings-card">
+            <h3>🏷️ إعدادات طباعة الباركود</h3>
+            <p class="settings-desc">تحديد حجم ملصق الباركود وخيارات الطباعة</p>
+            <div class="form-group">
+              <label>حجم الملصق</label>
+              <select id="settingBarcodeSize" class="form-control">
+                <option value="small">صغير (30×15 mm)</option>
+                <option value="medium" selected>متوسط (40×22 mm)</option>
+                <option value="large">كبير (58×32 mm)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-wrap" style="font-size:13px;gap:10px">
+                <input type="checkbox" id="settingBarcodeShowPrice" checked />
+                عرض السعر على الملصق
+              </label>
+            </div>
+            <div class="form-group">
+              <label>عدد النسخ المطبوعة</label>
+              <input type="number" id="settingBarcodeCopies" class="form-control" value="1" min="1" max="100" style="width:100px" />
+            </div>
+            <button class="btn-secondary" onclick="saveSettings()" style="margin-top:4px">💾 حفظ إعدادات الطباعة</button>
+          </div>
+
         </div>
       </div>
 
@@ -1688,7 +1904,7 @@
           <button class="btn-primary" onclick="openRecurringModal()">➕ فاتورة متكررة جديدة</button>
         </div>
 
-        <div class="settings-card" style="margin-top:16px;padding:14px 16px;background:rgba(124,110,245,0.06);border:1px solid rgba(124,110,245,0.2)">
+        <div class="settings-card" style="margin-top:16px;padding:14px 16px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.2)">
           <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-secondary)">
             <span style="font-size:20px">💡</span>
             <div>
@@ -1997,7 +2213,7 @@
             <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">إجمالي المدفوعات</div>
             <div id="statementTotalPayments" style="font-size:18px;font-weight:800;color:var(--success)">0 ج</div>
           </div>
-          <div style="background:rgba(124,110,245,0.08);border:1px solid rgba(124,110,245,0.2);border-radius:10px;padding:14px;text-align:center">
+          <div style="background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:10px;padding:14px;text-align:center">
             <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">المديونية الحالية</div>
             <div id="statementTotalDebt" style="font-size:18px;font-weight:800">0 ج</div>
           </div>
@@ -2151,9 +2367,100 @@
     </div>
   </div>
 
+  <!-- Customer Modal -->
+  <div class="modal-overlay" id="customerModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="customerModalTitle">إضافة عميل جديد</h3>
+        <button class="modal-close" onclick="closeCustomerModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>الاسم *</label>
+            <input type="text" id="cName" class="form-control" placeholder="اسم العميل" />
+          </div>
+          <div class="form-group">
+            <label>رقم الهاتف</label>
+            <input type="text" id="cPhone" class="form-control" placeholder="01xxxxxxxxx" />
+          </div>
+          <div class="form-group full-width">
+            <label>العنوان</label>
+            <input type="text" id="cAddress" class="form-control" placeholder="عنوان العميل" />
+          </div>
+          <div class="form-group full-width">
+            <label>ملاحظات</label>
+            <textarea id="cNotes" class="form-control" rows="2" placeholder="ملاحظات..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeCustomerModal()">إلغاء</button>
+        <button class="btn-primary" onclick="saveCustomer()">💾 حفظ العميل</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notifications -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <!-- PWA Install Prompt Banner -->
+  <div id="pwaInstallBanner" style="display:none;position:fixed;bottom:80px;right:16px;left:16px;z-index:9999;background:var(--surface);border:1.5px solid var(--primary);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow-xl);display:none;align-items:center;gap:12px;max-width:420px;margin:0 auto">
+    <span style="font-size:28px">👔</span>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;color:var(--text-primary)">تثبيت أحمد ستور</div>
+      <div style="font-size:11px;color:var(--text-muted)">أضف التطبيق للشاشة الرئيسية للوصول السريع</div>
+    </div>
+    <button id="pwaInstallBtn" style="background:var(--primary);color:white;border:none;border-radius:var(--radius);padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">تثبيت</button>
+    <button onclick="document.getElementById('pwaInstallBanner').style.display='none'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
+  </div>
+
   <script src="app.js"></script>
+
+  <script>
+  // ── Service Worker Registration (http/https only) ─────────
+  const isHTTP = location.protocol === 'http:' || location.protocol === 'https:';
+
+  if (isHTTP && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => {
+          console.log('[PWA] Service Worker registered:', reg.scope);
+          setInterval(() => reg.update(), 30 * 60 * 1000);
+        })
+        .catch(err => console.warn('[PWA] SW registration failed:', err));
+    });
+  }
+
+  // ── PWA Install Prompt (http/https only) ─────────────────
+  if (isHTTP) {
+    let deferredInstallPrompt = null;
+    const installBanner = document.getElementById('pwaInstallBanner');
+    const installBtn    = document.getElementById('pwaInstallBtn');
+
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      if (installBanner) installBanner.style.display = 'flex';
+    });
+
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        console.log('[PWA] Install outcome:', outcome);
+        deferredInstallPrompt = null;
+        if (installBanner) installBanner.style.display = 'none';
+      });
+    }
+
+    window.addEventListener('appinstalled', () => {
+      if (installBanner) installBanner.style.display = 'none';
+      console.log('[PWA] App installed successfully!');
+    });
+  }
+  </script>
 </body>
 </html>
+
