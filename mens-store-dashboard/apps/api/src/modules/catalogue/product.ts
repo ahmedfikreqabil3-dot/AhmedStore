@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Category, CreateProductInput, Product } from '@ahmed-store/contracts';
 
 export interface ProductRepository {
+  list(organizationId: string): Promise<Product[]>;
   findBySku(organizationId: string, sku: string): Promise<Product | null>;
   findByBarcode(organizationId: string, barcode: string): Promise<Product | null>;
   findCategory(id: string, organizationId: string): Promise<Category | null>;
@@ -14,6 +15,9 @@ export type CreateProductResult =
 
 export function createProductService(repository: ProductRepository) {
   return {
+    async list(organizationId: string) {
+      return repository.list(organizationId);
+    },
     async create(organizationId: string, input: CreateProductInput): Promise<CreateProductResult> {
       if (await repository.findBySku(organizationId, input.sku)) return { ok: false, reason: 'SKU_EXISTS' };
       if (input.barcode && await repository.findByBarcode(organizationId, input.barcode)) return { ok: false, reason: 'BARCODE_EXISTS' };

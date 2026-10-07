@@ -6,10 +6,15 @@ const category = { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', organizationId, n
 const input = { name: 'Oxford Shirt', sku: 'SH-1', barcode: '123456', categoryId: category.id, salePrice: '150.2500', costPrice: '100.1250' };
 
 function repository(overrides: Partial<ProductRepository> = {}): ProductRepository {
-  return { findBySku: async () => null, findByBarcode: async () => null, findCategory: async () => category, create: async (product) => product, ...overrides };
+  return { list: async () => [], findBySku: async () => null, findByBarcode: async () => null, findCategory: async () => category, create: async (product) => product, ...overrides };
 }
 
 describe('product service', () => {
+  it('lists products only for the requested organization', async () => {
+    const product = { id: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', organizationId, ...input, active: true, version: 1 };
+    await expect(createProductService(repository({ list: async (requestedOrganizationId) => requestedOrganizationId === organizationId ? [product] : [] })).list(organizationId)).resolves.toEqual([product]);
+  });
+
   it('creates active versioned products with precise price strings', async () => {
     const result = await createProductService(repository()).create(organizationId, input);
     expect(result).toMatchObject({ ok: true, product: { organizationId, active: true, version: 1, salePrice: '150.2500' } });

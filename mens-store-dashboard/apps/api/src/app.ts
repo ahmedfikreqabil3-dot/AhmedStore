@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createUserSchema, healthResponseSchema, loginSchema, registerUserSchema, type Category, type CreateCategoryInput, type PublicUser } from '@ahmed-store/contracts';
+import { createCategorySchema, createProductSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, type Category, type CreateCategoryInput, type CreateProductInput, type CreateWarehouseInput, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -19,6 +19,16 @@ export interface CategoryService {
   create(organizationId: string, input: CreateCategoryInput): Promise<{ ok: true; category: Category } | { ok: false; reason: 'CATEGORY_EXISTS' }>;
 }
 
+export interface ProductService {
+  list(organizationId: string): Promise<Product[]>;
+  create(organizationId: string, input: CreateProductInput): Promise<{ ok: true; product: Product } | { ok: false; reason: 'SKU_EXISTS' | 'BARCODE_EXISTS' | 'CATEGORY_UNAVAILABLE' }>;
+}
+
+export interface WarehouseService {
+  list(organizationId: string): Promise<Warehouse[]>;
+  create(organizationId: string, input: CreateWarehouseInput): Promise<{ ok: true; warehouse: Warehouse } | { ok: false; reason: 'WAREHOUSE_EXISTS' }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -28,7 +38,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -96,6 +106,42 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await categoryService.create(authenticated.user.organizationId, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(201).send(result.category);
+  });
+
+  app.get('/api/v1/products', { schema: { summary: 'List organization products', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { products: await productService.list(authenticated.user.organizationId) };
+  });
+
+  app.post('/api/v1/products', { schema: { summary: 'Create an organization product', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = createProductSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PRODUCT' });
+    const result = await productService.create(authenticated.user.organizationId, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(201).send(result.product);
+  });
+
+  app.get('/api/v1/warehouses', { schema: { summary: 'List organization warehouses', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { warehouses: await warehouseService.list(authenticated.user.organizationId) };
+  });
+
+  app.post('/api/v1/warehouses', { schema: { summary: 'Create an organization warehouse', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = createWarehouseSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_WAREHOUSE' });
+    const result = await warehouseService.create(authenticated.user.organizationId, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(201).send(result.warehouse);
   });
 
   return app;

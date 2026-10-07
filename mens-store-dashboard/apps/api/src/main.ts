@@ -3,6 +3,8 @@ import { startServer } from './server.js';
 import { createIdentityService } from './modules/identity/service.js';
 import { createSessionService } from './modules/identity/session.js';
 import { createCategoryService } from './modules/catalogue/category.js';
+import { createProductService } from './modules/catalogue/product.js';
+import { createWarehouseService } from './modules/catalogue/warehouse.js';
 
 const prisma = new PrismaClient();
 const identityService = createIdentityService({
@@ -51,4 +53,38 @@ const categoryService = createCategoryService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService);
+const productService = createProductService({
+  async list(organizationId) {
+    const products = await prisma.product.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+    return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) }));
+  },
+  async findBySku(organizationId, sku) {
+    const product = await prisma.product.findUnique({ where: { organizationId_sku: { organizationId, sku } } });
+    return product && { ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) };
+  },
+  async findByBarcode(organizationId, barcode) {
+    const product = await prisma.product.findUnique({ where: { organizationId_barcode: { organizationId, barcode } } });
+    return product && { ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) };
+  },
+  async findCategory(id, organizationId) {
+    return prisma.category.findFirst({ where: { id, organizationId } });
+  },
+  async create(product) {
+    const created = await prisma.product.create({ data: product });
+    return { ...created, salePrice: created.salePrice.toFixed(4), costPrice: created.costPrice.toFixed(4) };
+  }
+});
+
+const warehouseService = createWarehouseService({
+  async list(organizationId) {
+    return prisma.warehouse.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+  },
+  async findByName(organizationId, name) {
+    return prisma.warehouse.findUnique({ where: { organizationId_name: { organizationId, name } } });
+  },
+  async create(warehouse) {
+    return prisma.warehouse.create({ data: warehouse });
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService);
