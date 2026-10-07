@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import { createIdentityService } from '../../src/modules/identity/service.js';
@@ -52,6 +52,10 @@ beforeAll(async () => {
 afterEach(async () => {
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { organizationId } });
+  await prisma.inventoryTransaction.deleteMany({ where: { organizationId } });
+  await prisma.product.deleteMany({ where: { organizationId } });
+  await prisma.category.deleteMany({ where: { organizationId } });
+  await prisma.warehouse.deleteMany({ where: { organizationId } });
   await prisma.user.deleteMany({ where: { organizationId } });
   await prisma.user.deleteMany({ where: { organizationId: otherOrganizationId } });
 });
@@ -104,5 +108,15 @@ describe('identity registration against PostgreSQL', () => {
     expect((await app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { cookie } })).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie } })).statusCode).toBe(401);
     expect(await prisma.auditEvent.count({ where: { organizationId, action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'USER_CREATED'] } } })).toBe(3);
+  });
+
+  it('persists precise inventory movements and lets PostgreSQL reject zero quantities', async () => {
+    const category = await prisma.category.create({ data: { organizationId, name: 'Shirts' } });
+    const warehouse = await prisma.warehouse.create({ data: { organizationId, name: 'Main Warehouse' } });
+    const product = await prisma.product.create({ data: { organizationId, categoryId: category.id, name: 'Oxford Shirt', sku: `SHIRT-${randomUUID()}`, barcode: `BC-${randomUUID()}`, salePrice: new Prisma.Decimal('150.2500'), costPrice: new Prisma.Decimal('100.1250') } });
+    const movement = await prisma.inventoryTransaction.create({ data: { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'OPENING_BALANCE', quantity: new Prisma.Decimal('5.2500'), referenceType: 'OPENING', referenceId: product.id } });
+
+    expect(movement.quantity.toFixed(4)).toBe('5.2500');
+    await expect(prisma.inventoryTransaction.create({ data: { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'ADJUSTMENT', quantity: new Prisma.Decimal('0'), referenceType: 'TEST', referenceId: product.id } })).rejects.toThrow();
   });
 });
