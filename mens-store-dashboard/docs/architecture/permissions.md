@@ -30,7 +30,9 @@ permissions for usability and is never the security boundary.
 
 `FINANCE` is the dedicated approver for no-invoice returns. `ADMIN` retains
 the same approval permission as an emergency/ownership override; managers can
-enter a proposed valuation but cannot self-approve it.
+enter a proposed valuation but cannot self-approve it. The permissions are
+`returns:submit_no_invoice` for `MANAGER`/`ADMIN` and
+`returns:approve_no_invoice` for `FINANCE`/`ADMIN`.
 
 ## Security acceptance checks
 

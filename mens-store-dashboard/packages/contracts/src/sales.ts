@@ -43,3 +43,21 @@ export const createInvoiceReturnSchema = z.object({
   occurredAt: z.coerce.date()
 });
 export type CreateInvoiceReturnInput = z.infer<typeof createInvoiceReturnSchema>;
+
+export const noInvoiceReturnLineInputSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: positiveDecimalStringSchema,
+  unitPrice: decimalStringSchema
+});
+export type NoInvoiceReturnLineInput = z.infer<typeof noInvoiceReturnLineInputSchema>;
+
+export const createNoInvoiceReturnSchema = z.object({
+  customerId: z.string().uuid(),
+  warehouseId: z.string().uuid(),
+  lines: z.array(noInvoiceReturnLineInputSchema).min(1),
+  payments: z.array(salePaymentInputSchema).min(1),
+  reason: z.string().trim().min(3).max(500),
+  itemCondition: z.string().trim().min(2).max(300),
+  occurredAt: z.coerce.date()
+});
+export type CreateNoInvoiceReturnInput = z.infer<typeof createNoInvoiceReturnSchema>;
