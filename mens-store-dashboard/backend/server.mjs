@@ -1,15 +1,17 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
 import { getOverview, importLegacySnapshot, runMigrations } from './src/database.mjs';
 import { completeReturn, completeSale, createCustomer, createProduct, getSaleForReturn, listCustomers, listProducts, updateCustomer, updateProduct } from './src/business.mjs';
 
 const port = Number(process.env.PORT || 3000);
-const rootDir = resolve(import.meta.dirname, '..');
-const dataDir = join(rootDir, 'data');
-const backupDir = join(dataDir, 'backups');
-const databasePath = join(dataDir, 'ahmed-store.db');
+const projectDir = resolve(import.meta.dirname, '..');
+const frontendDir = join(projectDir, 'frontend');
+const databaseDir = join(projectDir, 'database');
+const runtimeDir = join(databaseDir, 'runtime');
+const backupDir = join(runtimeDir, 'backups');
+const databasePath = join(runtimeDir, 'ahmed-store.db');
 mkdirSync(backupDir, { recursive: true });
 
 const db = new DatabaseSync(databasePath);
@@ -94,8 +96,8 @@ function createBackup() {
 
 function serveFile(requestPath, response) {
   const relativePath = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
-  const target = normalize(join(rootDir, relativePath));
-  if (!target.startsWith(rootDir) || target.includes(`${join(rootDir, 'data')}`) || target.includes(`${join(rootDir, '.git')}`) || target.includes(`${join(rootDir, 'local-server')}`)) {
+  const target = normalize(join(frontendDir, relativePath));
+  if (!target.startsWith(frontendDir)) {
     response.writeHead(403); response.end('Forbidden'); return;
   }
   if (!existsSync(target)) { response.writeHead(404); response.end('Not found'); return; }

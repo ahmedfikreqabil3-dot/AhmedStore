@@ -1,6 +1,6 @@
 # Ahmed Store Local Server
 
-This server keeps the authoritative store data in `../data/ahmed-store.db` using SQLite built into Node.js. No internet, Java, or database service is required.
+This server keeps the authoritative store data in `../database/runtime/ahmed-store.db` using SQLite built into Node.js. No internet, Java, or database service is required.
 
 ## Run
 
@@ -20,7 +20,7 @@ Create a consistent live backup with:
 Invoke-RestMethod -Method Post http://localhost:3000/api/backups
 ```
 
-Backups are stored under `../data/backups`. Copy this folder regularly to another disk or USB drive.
+Backups are stored under `../database/runtime/backups`. Copy this folder regularly to another disk or USB drive.
 
 ## Current data authority
 
@@ -32,5 +32,5 @@ full or partial return: it validates the original sale quantities, restores
 stock, and records the refund in one transaction.
 
 The legacy browser snapshot remains temporarily for screens that have not yet
-been moved to normalized server APIs. Do not delete `../data/ahmed-store.db`;
+been moved to normalized server APIs. Do not delete `../database/runtime/ahmed-store.db`;
 the launcher and automatic backups use this file.

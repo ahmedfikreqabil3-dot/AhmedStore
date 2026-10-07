@@ -3,8 +3,8 @@ modern-app/node_modules/
 modern-app/dist/
 modern-app/.env.local
 
-# Local store database and backups
-data/
+# Local SQLite database and backups
+database/runtime/
 
 # Local editor and operating system files
 .DS_Store

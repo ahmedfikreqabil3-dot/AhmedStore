@@ -8,9 +8,10 @@ The application is now a local-first desktop-browser system:
 
 - The existing Arabic HTML/CSS/JavaScript application remains the user interface.
 - `Start-Ahmed-Store.bat` starts the local Node.js server and opens the app at `http://localhost:3000`.
+- Source code is separated into `frontend/`, `backend/`, and `database/` layers.
 - The server uses SQLite built into Node.js (`node:sqlite`), so there is no Java, online service, or separate database installation.
-- Primary database: `data/ahmed-store.db`.
-- Consistent backups: `data/backups/` via `POST /api/backups`.
+- Primary database: `database/runtime/ahmed-store.db`.
+- Consistent backups: `database/runtime/backups/` via `POST /api/backups`.
 - The old browser snapshot is temporarily retained for screens not yet migrated to server APIs. It is a compatibility bridge, not the long-term source of truth.
 
 ## Completed improvements
@@ -25,7 +26,7 @@ The application is now a local-first desktop-browser system:
 
 ### Local persistence and recovery
 
-- Added a local SQLite service in `local-server/`.
+- Added a local SQLite service in `backend/`.
 - Added schema migrations and a versioned migration history table.
 - Added a local JSON snapshot endpoint with revision checking to avoid silent overwrite conflicts.
 - Added an import of the previous browser data into normalized SQLite tables.
@@ -58,16 +59,16 @@ The database now stores normalized records for:
 ## Validation completed
 
 - `node --check app.js` passes.
-- `node --check local-server/server.mjs` passes.
-- `node --check local-server/src/business.mjs` passes.
-- `npm.cmd test` in `local-server/` passes.
+- `node --check backend/server.mjs` passes.
+- `node --check backend/src/business.mjs` passes.
+- `npm.cmd test` in `backend/` passes.
 - Tests cover product/customer updates, sale completion, insufficient-stock rejection, credit validation, stock adjustment, partial return, excess-return rejection, and stock restoration.
 - The running service was checked against the existing database after restart. Historical invoice `#1088` was read successfully without modifying data.
 
 ## Important operational notes
 
 - Always start the app with `Start-Ahmed-Store.bat`, not by opening `index.html` directly. The `file://` version cannot use the SQLite API.
-- Do not delete `data/ahmed-store.db` or `data/backups/`.
+- Do not delete `database/runtime/ahmed-store.db` or `database/runtime/backups/`.
 - Copy the backup folder to a USB drive or another disk regularly.
 - The initial browser data is tied to the old `file://` origin. If a browser still has data only in that origin, export JSON there and import it after opening `http://localhost:3000`.
 - There is no real authentication on the local API yet. The browser login is still the legacy application login. This is acceptable only while the app runs on a trusted local computer/network.
