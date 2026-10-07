@@ -39,7 +39,7 @@ const userDirectoryService = {
   }
 };
 
-const app = buildApp(identityService, authenticationService, userDirectoryService);
+const app = await buildApp(identityService, authenticationService, userDirectoryService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });

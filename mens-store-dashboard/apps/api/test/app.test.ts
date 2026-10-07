@@ -27,11 +27,14 @@ const successIdentity = { register: async () => ({ ok: true as const, user: regi
 
 describe('API health endpoint', () => {
   it('returns the versioned API health response', async () => {
-    const app = buildApp(successIdentity, authenticationService, userDirectoryService);
+    const app = await buildApp(successIdentity, authenticationService, userDirectoryService);
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
+    const openapi = await app.inject({ method: 'GET', url: '/api/v1/openapi.json' });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok', service: 'api' });
+    expect(openapi.statusCode).toBe(200);
+    expect(openapi.json()).toMatchObject({ openapi: expect.any(String), info: { title: 'Ahmed Store API' }, servers: [{ url: '/api/v1' }], paths: { '/auth/login': expect.any(Object), '/users': expect.any(Object) } });
     await app.close();
   });
 
@@ -45,7 +48,7 @@ describe('API health endpoint', () => {
         : ({ ok: false as const, reason: 'UNAUTHENTICATED' as const }),
       logout: async (token: string | undefined) => { loggedOutToken = token; }
     };
-    const app = buildApp(successIdentity, auth, userDirectoryService);
+    const app = await buildApp(successIdentity, auth, userDirectoryService);
     const invalid = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: {} });
     const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { organizationId: input.organizationId, email: input.email, password: 'a-secure-password' } });
     const unauthorized = await app.inject({ method: 'GET', url: '/api/v1/auth/me' });
@@ -65,7 +68,7 @@ describe('API health endpoint', () => {
   });
 
   it('returns an authentication error for rejected login credentials', async () => {
-    const app = buildApp(successIdentity, authenticationService, userDirectoryService);
+    const app = await buildApp(successIdentity, authenticationService, userDirectoryService);
     const response = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { organizationId: input.organizationId, email: input.email, password: 'a-secure-password' } });
     expect(response.statusCode).toBe(401);
     await app.close();
@@ -75,9 +78,9 @@ describe('API health endpoint', () => {
     const adminAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: registeredUser }) };
     const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
     const identity = successIdentity;
-    const anonymous = buildApp(identity, authenticationService, userDirectoryService);
-    const cashier = buildApp(identity, cashierAuth, userDirectoryService);
-    const admin = buildApp(identity, adminAuth, userDirectoryService);
+    const anonymous = await buildApp(identity, authenticationService, userDirectoryService);
+    const cashier = await buildApp(identity, cashierAuth, userDirectoryService);
+    const admin = await buildApp(identity, adminAuth, userDirectoryService);
     expect((await anonymous.inject({ method: 'GET', url: '/api/v1/users' })).statusCode).toBe(401);
     expect((await cashier.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie: 'session=token' } })).statusCode).toBe(403);
     expect((await admin.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie: 'session=token' } })).json()).toEqual({ users: [registeredUser] });
@@ -88,9 +91,9 @@ describe('API health endpoint', () => {
     let audited = false;
     const adminAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: registeredUser }) };
     const identity = { ...successIdentity, auditUserCreated: async () => { audited = true; } };
-    const app = buildApp(identity, adminAuth, userDirectoryService);
-    const anonymous = buildApp(identity, authenticationService, userDirectoryService);
-    const cashier = buildApp(identity, { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) }, userDirectoryService);
+    const app = await buildApp(identity, adminAuth, userDirectoryService);
+    const anonymous = await buildApp(identity, authenticationService, userDirectoryService);
+    const cashier = await buildApp(identity, { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) }, userDirectoryService);
     const invalid = await app.inject({ method: 'POST', url: '/api/v1/users', headers: { cookie: 'session=token' }, payload: {} });
     const created = await app.inject({ method: 'POST', url: '/api/v1/users', headers: { cookie: 'session=token' }, payload: { name: input.name, email: input.email, password: input.password, role: input.role } });
     expect((await anonymous.inject({ method: 'POST', url: '/api/v1/users', payload: {} })).statusCode).toBe(401);

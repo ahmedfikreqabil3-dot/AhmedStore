@@ -48,9 +48,10 @@ available from `legacy/`.
 
 ## Phase 2 — Identity, tenancy, and access control
 
-**Status:** In progress. A local PostgreSQL 17 integration environment is
-available and verified on 2026-10-07; remaining identity deliverables are not
-yet complete.
+**Status:** Complete on 2026-10-07. A local PostgreSQL 17 integration
+environment verifies sessions, audit events, role enforcement, and
+organization isolation. The generated OpenAPI document is available at
+`/api/v1/openapi.json`.
 
 **Deliverables:** Organization/User/Role/Session/Audit schema migrations,
 password/session management, RBAC middleware, organization scoping, and OpenAPI
