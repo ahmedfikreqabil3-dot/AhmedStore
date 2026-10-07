@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createInventoryMovementSchema, createProductSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateInventoryMovementInput, type CreateProductInput, type CreateWarehouseInput, type InventoryMovement, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createInventoryMovementSchema, createProductSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateInventoryMovementInput, type CreateProductInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -37,6 +37,11 @@ export interface InventoryMovementService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateInventoryMovementInput): Promise<{ ok: true; movement: InventoryMovement; replayed: boolean } | { ok: false; reason: 'PRODUCT_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' }>;
 }
 
+export interface CustomerService {
+  list(organizationId: string): Promise<Customer[]>;
+  create(organizationId: string, input: CreateCustomerInput): Promise<{ ok: true; customer: Customer }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -46,7 +51,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -172,6 +177,23 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await inventoryMovementService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.movement);
+  });
+
+  app.get('/api/v1/customers', { schema: { summary: 'List active organization customers', tags: ['Customers'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'sales:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { customers: await customerService.list(authenticated.user.organizationId) };
+  });
+
+  app.post('/api/v1/customers', { schema: { summary: 'Create an organization customer', tags: ['Customers'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'sales:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = createCustomerSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_CUSTOMER' });
+    const result = await customerService.create(authenticated.user.organizationId, parsed.data);
+    return reply.code(201).send(result.customer);
   });
 
   return app;

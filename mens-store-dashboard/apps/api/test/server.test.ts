@@ -9,10 +9,11 @@ const productService = { list: async () => [], create: async () => ({ ok: false 
 const warehouseService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'WAREHOUSE_EXISTS' as const }) };
 const stockService = { quantityAsOf: async () => '0.0000' };
 const inventoryMovementService = { post: async () => ({ ok: false as const, reason: 'PRODUCT_UNAVAILABLE' as const }) };
+const customerService = { list: async () => [], create: async () => ({ ok: true as const, customer: { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', organizationId: '', legacyId: null, name: 'Mohamed Ali', phone: null, email: null, address: null, notes: null, creditLimit: '0.0000', active: true, version: 1 } }) };
 
 describe('API server', () => {
   it('starts on an ephemeral port', async () => {
-    const app = await startServer(0, identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService);
+    const app = await startServer(0, identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService);
 
     expect(app.server.listening).toBe(true);
     await app.close();

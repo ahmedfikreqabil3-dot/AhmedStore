@@ -18,6 +18,7 @@ model Organization {
   categories Category[]
   products Product[]
   warehouses Warehouse[]
+  customers Customer[]
   inventoryTransactions InventoryTransaction[]
 }
 
@@ -138,6 +139,27 @@ model Warehouse {
 
   @@unique([organizationId, name])
   @@index([organizationId, active])
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legacyId       Int?
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  creditLimit    Decimal  @default(0) @db.Decimal(19, 4)
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, legacyId])
+  @@index([organizationId, active, name])
+  @@index([organizationId, phone])
 }
 
 model InventoryTransaction {

@@ -7,6 +7,7 @@ import { createProductService } from './modules/catalogue/product.js';
 import { createWarehouseService } from './modules/catalogue/warehouse.js';
 import { createStockService } from './modules/inventory/stock.js';
 import { createInventoryMovementService } from './modules/inventory/movement.js';
+import { createCustomerService } from './modules/parties/customer.js';
 
 const prisma = new PrismaClient();
 const identityService = createIdentityService({
@@ -120,4 +121,15 @@ const inventoryMovementService = createInventoryMovementService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService);
+const customerService = createCustomerService({
+  async list(organizationId) {
+    const customers = await prisma.customer.findMany({ where: { organizationId, active: true }, orderBy: { name: 'asc' } });
+    return customers.map((customer) => ({ ...customer, creditLimit: customer.creditLimit.toFixed(4) }));
+  },
+  async create(customer) {
+    const created = await prisma.customer.create({ data: customer });
+    return { ...created, creditLimit: created.creditLimit.toFixed(4) };
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService);
