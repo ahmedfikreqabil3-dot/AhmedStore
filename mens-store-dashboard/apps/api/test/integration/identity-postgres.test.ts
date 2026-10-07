@@ -102,6 +102,9 @@ afterEach(async () => {
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { organizationId } });
   await prisma.inventoryTransaction.deleteMany({ where: { organizationId } });
+  await prisma.returnPayment.deleteMany({ where: { salesReturn: { organizationId } } });
+  await prisma.returnLine.deleteMany({ where: { salesReturn: { organizationId } } });
+  await prisma.salesReturn.deleteMany({ where: { organizationId } });
   await prisma.salePayment.deleteMany({ where: { sale: { organizationId } } });
   await prisma.saleLine.deleteMany({ where: { sale: { organizationId } } });
   await prisma.sale.deleteMany({ where: { organizationId } });

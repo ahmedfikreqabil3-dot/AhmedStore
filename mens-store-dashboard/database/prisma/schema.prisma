@@ -20,6 +20,7 @@ model Organization {
   warehouses Warehouse[]
   customers Customer[]
   sales Sale[]
+  salesReturns SalesReturn[]
   inventoryTransactions InventoryTransaction[]
 }
 
@@ -52,6 +53,12 @@ enum PaymentMethod {
 }
 
 enum SaleStatus {
+  POSTED
+  VOIDED
+}
+
+enum ReturnStatus {
+  PENDING_APPROVAL
   POSTED
   VOIDED
 }
@@ -135,6 +142,7 @@ model Product {
   updatedAt      DateTime @updatedAt
   inventoryTransactions InventoryTransaction[]
   saleLines SaleLine[]
+  returnLines ReturnLine[]
 
   @@unique([organizationId, sku])
   @@unique([organizationId, barcode])
@@ -152,6 +160,7 @@ model Warehouse {
   updatedAt      DateTime @updatedAt
   inventoryTransactions InventoryTransaction[]
   sales Sale[]
+  salesReturns SalesReturn[]
 
   @@unique([organizationId, name])
   @@index([organizationId, active])
@@ -173,6 +182,7 @@ model Customer {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   sales          Sale[]
+  salesReturns   SalesReturn[]
 
   @@unique([organizationId, legacyId])
   @@index([organizationId, active, name])
@@ -197,6 +207,7 @@ model Sale {
   createdAt      DateTime   @default(now())
   lines          SaleLine[]
   payments       SalePayment[]
+  returns        SalesReturn[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, occurredAt])
@@ -220,6 +231,7 @@ model SaleLine {
 
   @@unique([saleId, lineNumber])
   @@index([productId])
+  returnLines ReturnLine[]
 }
 
 model SalePayment {
@@ -231,6 +243,60 @@ model SalePayment {
   createdAt DateTime      @default(now())
 
   @@index([saleId, method])
+}
+
+model SalesReturn {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  saleId         String?
+  sale           Sale?        @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  actorUserId    String
+  approvedByUserId String?
+  reason         String
+  total          Decimal      @db.Decimal(19, 4)
+  status         ReturnStatus @default(POSTED)
+  idempotencyKey String?
+  occurredAt     DateTime
+  createdAt      DateTime     @default(now())
+  lines          ReturnLine[]
+  payments       ReturnPayment[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, saleId, occurredAt])
+  @@index([organizationId, status, occurredAt])
+  @@index([organizationId, warehouseId, occurredAt])
+}
+
+model ReturnLine {
+  id             String       @id @default(uuid())
+  salesReturnId  String
+  salesReturn    SalesReturn  @relation(fields: [salesReturnId], references: [id], onDelete: Restrict)
+  saleLineId     String?
+  saleLine       SaleLine?    @relation(fields: [saleLineId], references: [id], onDelete: Restrict)
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity       Decimal      @db.Decimal(19, 4)
+  unitPrice      Decimal      @db.Decimal(19, 4)
+  total          Decimal      @db.Decimal(19, 4)
+
+  @@index([saleLineId])
+  @@index([productId])
+}
+
+model ReturnPayment {
+  id             String        @id @default(uuid())
+  salesReturnId  String
+  salesReturn    SalesReturn   @relation(fields: [salesReturnId], references: [id], onDelete: Restrict)
+  method         PaymentMethod
+  amount         Decimal       @db.Decimal(19, 4)
+  createdAt      DateTime      @default(now())
+
+  @@index([salesReturnId, method])
 }
 
 model InventoryTransaction {
