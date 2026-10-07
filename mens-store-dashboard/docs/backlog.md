@@ -7,6 +7,7 @@
 3. Implement decimal money/quantity value objects and idempotent command handling.
 4. Implement products, warehouses, and immutable inventory ledger.
 5. Implement transactional sales, payments, and returns with concurrency tests.
+6. Implement ENH-02, ENH-08, ENH-09, ENH-10, ENH-12, and ENH-13 as immutable posting workflows.
 
 ## P1 — Daily operations
 
@@ -14,6 +15,7 @@
 2. Implement customer/supplier ledgers, purchase receipts, expenses, treasuries, and shifts.
 3. Implement stock transfers, stock adjustments, and low-stock workflows.
 4. Add reporting/export APIs and RTL accessible React components.
+5. Implement ENH-01, ENH-03 through ENH-07, ENH-11, and ENH-14 with API and UI regression tests.
 
 ## P2 — Migration and delivery
 
