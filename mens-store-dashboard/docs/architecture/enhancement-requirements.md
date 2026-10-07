@@ -15,7 +15,7 @@ testing. No legacy screen is removed merely because a replacement is scaffolded.
 | ENH-07 | Export Sales History into separate rows/columns. | Phase 4 reporting | CSV/XLSX contains one documented row grain, explicit columns, locale-safe decimals/dates, selected filters, and permission/audit checks. |
 | ENH-08 | Edit saved sales returns with correct stock/financial adjustment. | Phase 3 returns | Edit is implemented as an audited reversal and replacement posting, never mutation of a posted return. |
 | ENH-09 | Prevent cumulative returns beyond quantity sold. | Phase 3 returns | PostgreSQL transaction rejects quantity above original line quantity minus completed returns, including concurrent requests. |
-| ENH-10 | Support return without original invoice. | Phase 3 returns | Allowed only to approved finance roles; requires reason, customer/warehouse, item condition/value, refund method, approval/audit trail, and treasury movement. Exact refund valuation requires business approval before implementation. |
+| ENH-10 | Support return without original invoice. | Phase 3 returns | Allowed only to approved finance roles; requires a manager-entered refund value, mandatory reason, customer/warehouse, item condition, refund method, finance approval/audit trail, and treasury movement. |
 | ENH-11 | Barcode entry/scanning for purchase invoices. | Phase 4 purchases | Keyboard/scanner input resolves an organization product barcode, adds/increments the line, and rejects unknown/duplicate conflicts clearly. |
 | ENH-12 | Edit saved purchase invoices with stock/financial controls. | Phase 3 purchasing | Edit creates compensating inventory/payable/treasury postings and replacement posting; closed periods require elevated permission. |
 | ENH-13 | Support purchase returns. | Phase 3 purchasing | References received purchase lines, restores supplier balance, removes available stock only if sufficient, and posts atomically. |
@@ -23,9 +23,10 @@ testing. No legacy screen is removed merely because a replacement is scaffolded.
 
 ## Required decisions before posting behavior is implemented
 
-1. **No-invoice return valuation:** recommended: current approved selling price
-   or manager-entered value with mandatory reason and finance approval. The
-   business owner must select the policy before ENH-10 is released.
+1. **No-invoice return valuation:** **decided 2026-10-08** — manager-entered
+   value with mandatory reason and finance approval. The finance-approver role
+   mapping must be defined before ENH-10 is released because the current role
+   set contains no dedicated finance role.
 2. **Posted document editing:** recommended: show “Edit”, but technically post
    a compensating reversal plus a replacement document to preserve auditability.
 3. **Export row grain:** recommended: one row per sale line for detailed export,
