@@ -13,6 +13,8 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users     User[]
+  sessions  Session[]
+  auditEvents AuditEvent[]
 }
 
 enum Role {
@@ -33,7 +35,39 @@ model User {
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  sessions       Session[]
+  auditEvents    AuditEvent[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
+}
+
+model Session {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, userId])
+  @@index([expiresAt])
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorUserId    String?
+  actorUser      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action         String
+  entityType     String
+  entityId       String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
 }

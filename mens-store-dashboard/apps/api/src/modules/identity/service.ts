@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PublicUser, RegisterUserInput } from '@ahmed-store/contracts';
 import { hashPassword } from './password.js';
 
-export type StoredUser = PublicUser & { passwordHash: string };
+export type StoredUser = PublicUser & { passwordHash: string; active: boolean };
 
 export interface UserRepository {
   findByEmail(organizationId: string, email: string): Promise<StoredUser | null>;
@@ -25,9 +25,10 @@ export function createIdentityService(repository: UserRepository) {
         name: input.name,
         email: input.email,
         role: input.role,
-        passwordHash: await hashPassword(input.password)
+        passwordHash: await hashPassword(input.password),
+        active: true
       });
-      const { passwordHash: _passwordHash, ...publicUser } = user;
+      const { passwordHash: _passwordHash, active: _active, ...publicUser } = user;
       return { ok: true, user: publicUser };
     }
   };

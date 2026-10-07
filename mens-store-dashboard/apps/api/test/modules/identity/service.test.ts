@@ -27,7 +27,7 @@ describe('identity service', () => {
   });
 
   it('does not create duplicate organization emails', async () => {
-    const existing: StoredUser = { id: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', ...input, passwordHash: 'not-used' };
+    const existing: StoredUser = { id: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', ...input, passwordHash: 'not-used', active: true };
     const repository: UserRepository = {
       findByEmail: async () => existing,
       create: async () => { throw new Error('must not create'); }
