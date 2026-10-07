@@ -15,7 +15,8 @@ describe('identity service', () => {
     let created: StoredUser | undefined;
     const repository: UserRepository = {
       findByEmail: async () => null,
-      create: async (user) => { created = user; return user; }
+      create: async (user) => { created = user; return user; },
+      createAuditEvent: async () => undefined
     };
 
     const result = await createIdentityService(repository).register(input);
@@ -30,7 +31,8 @@ describe('identity service', () => {
     const existing: StoredUser = { id: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', ...input, passwordHash: 'not-used', active: true };
     const repository: UserRepository = {
       findByEmail: async () => existing,
-      create: async () => { throw new Error('must not create'); }
+      create: async () => { throw new Error('must not create'); },
+      createAuditEvent: async () => undefined
     };
 
     await expect(createIdentityService(repository).register(input)).resolves.toEqual({ ok: false, reason: 'EMAIL_TAKEN' });

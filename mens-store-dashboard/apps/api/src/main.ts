@@ -11,6 +11,9 @@ const identityService = createIdentityService({
   },
   async create(user) {
     return prisma.user.create({ data: user });
+  },
+  async createAuditEvent(input) {
+    await prisma.auditEvent.create({ data: input });
   }
 });
 

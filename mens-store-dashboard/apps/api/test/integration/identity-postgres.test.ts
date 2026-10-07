@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import { createIdentityService } from '../../src/modules/identity/service.js';
 import { createSessionService } from '../../src/modules/identity/session.js';
+import { hashPassword } from '../../src/modules/identity/password.js';
 
 const prisma = new PrismaClient();
 let organizationId = '';
@@ -17,6 +18,9 @@ const identityService = createIdentityService({
   },
   async create(user) {
     return prisma.user.create({ data: user });
+  },
+  async createAuditEvent(input) {
+    await prisma.auditEvent.create({ data: input });
   }
 });
 
@@ -60,16 +64,25 @@ afterAll(async () => {
 });
 
 describe('identity registration against PostgreSQL', () => {
-  it('persists a user and enforces the organization-email uniqueness rule', async () => {
-    const body = {
+  it('creates users only through an authenticated administrator and enforces tenant uniqueness', async () => {
+    const administrator = {
       organizationId,
       name: 'Database Admin',
       email: `admin-${randomUUID()}@example.test`,
       password: 'SecurePassword123!',
+      role: 'ADMIN' as const
+    };
+    await prisma.user.create({ data: { organizationId, name: administrator.name, email: administrator.email, passwordHash: await hashPassword(administrator.password), role: administrator.role } });
+    const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: administrator });
+    const cookie = String(login.headers['set-cookie']).split(';')[0];
+    const body = {
+      name: 'Database User',
+      email: `user-${randomUUID()}@example.test`,
+      password: 'SecurePassword123!',
       role: 'ADMIN'
     };
 
-    const created = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: body });
+    const created = await app.inject({ method: 'POST', url: '/api/v1/users', headers: { cookie }, payload: body });
     expect(created.statusCode).toBe(201);
 
     const persisted = await prisma.user.findUnique({
@@ -78,20 +91,18 @@ describe('identity registration against PostgreSQL', () => {
     expect(persisted).toMatchObject({ organizationId, name: body.name, email: body.email, role: 'ADMIN' });
     expect(persisted?.passwordHash).not.toBe(body.password);
 
-    const duplicate = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: body });
+    const duplicate = await app.inject({ method: 'POST', url: '/api/v1/users', headers: { cookie }, payload: body });
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json()).toEqual({ error: 'EMAIL_TAKEN' });
 
-    const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { organizationId, email: body.email, password: body.password } });
-    const cookie = String(login.headers['set-cookie']).split(';')[0];
     expect(login.statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie } })).statusCode).toBe(200);
     await prisma.user.create({ data: { organizationId: otherOrganizationId, name: 'Other Store User', email: `other-${randomUUID()}@example.test`, passwordHash: 'not-used', role: 'ADMIN' } });
     const listed = await app.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie } });
-    expect(listed.json().users).toHaveLength(1);
-    expect(listed.json().users[0]).toMatchObject({ email: body.email, organizationId });
+    expect(listed.json().users).toHaveLength(2);
+    expect(listed.json().users).toEqual(expect.arrayContaining([expect.objectContaining({ email: body.email, organizationId })]));
     expect((await app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { cookie } })).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie } })).statusCode).toBe(401);
-    expect(await prisma.auditEvent.count({ where: { organizationId, action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } } })).toBe(2);
+    expect(await prisma.auditEvent.count({ where: { organizationId, action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'USER_CREATED'] } } })).toBe(3);
   });
 });

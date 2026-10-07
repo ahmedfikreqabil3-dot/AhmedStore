@@ -12,6 +12,9 @@ export const registerUserSchema = z.object({
 });
 export type RegisterUserInput = z.infer<typeof registerUserSchema>;
 
+export const createUserSchema = registerUserSchema.omit({ organizationId: true });
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
 export const loginSchema = z.object({
   organizationId: z.string().uuid(),
   email: z.string().trim().email().transform((value) => value.toLowerCase()),

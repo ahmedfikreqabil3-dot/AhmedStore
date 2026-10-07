@@ -7,6 +7,7 @@ export type StoredUser = PublicUser & { passwordHash: string; active: boolean };
 export interface UserRepository {
   findByEmail(organizationId: string, email: string): Promise<StoredUser | null>;
   create(user: StoredUser): Promise<StoredUser>;
+  createAuditEvent(input: { organizationId: string; actorUserId: string; action: string; entityType: string; entityId: string }): Promise<void>;
 }
 
 export type RegistrationResult =
@@ -30,6 +31,9 @@ export function createIdentityService(repository: UserRepository) {
       });
       const { passwordHash: _passwordHash, active: _active, ...publicUser } = user;
       return { ok: true, user: publicUser };
+    },
+    async auditUserCreated(actorUserId: string, user: PublicUser) {
+      await repository.createAuditEvent({ organizationId: user.organizationId, actorUserId, action: 'USER_CREATED', entityType: 'User', entityId: user.id });
     }
   };
 }
