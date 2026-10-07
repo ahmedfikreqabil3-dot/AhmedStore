@@ -42,9 +42,11 @@ describe('no-invoice return service', () => {
   });
 
   it('approves only an existing pending request with the finance actor', async () => {
-    await expect(createNoInvoiceApprovalService({ findPending: async () => null, approve: async () => { throw new Error('must not approve'); } }).approve(organizationId, actorUserId, pending.id)).resolves.toEqual({ ok: false, reason: 'RETURN_NOT_PENDING' });
+    await expect(createNoInvoiceApprovalService({ listPending: async () => [], findPending: async () => null, approve: async () => { throw new Error('must not approve'); } }).approve(organizationId, actorUserId, pending.id)).resolves.toEqual({ ok: false, reason: 'RETURN_NOT_PENDING' });
     let command: unknown;
-    const service = createNoInvoiceApprovalService({ findPending: async () => pending, approve: async (received) => { command = received; return { ok: true, salesReturn: { id: pending.id, total: pending.total } }; } });
+    const queue = [{ ...pending, customerId, warehouseId, actorUserId, reason: input.reason, occurredAt: input.occurredAt }];
+    const service = createNoInvoiceApprovalService({ listPending: async () => queue, findPending: async () => pending, approve: async (received) => { command = received; return { ok: true, salesReturn: { id: pending.id, total: pending.total } }; } });
+    await expect(service.listPending(organizationId)).resolves.toEqual(queue);
     await expect(service.approve(organizationId, actorUserId, pending.id)).resolves.toEqual({ ok: true, salesReturn: { id: pending.id, total: pending.total } });
     expect(command).toEqual({ id: pending.id, organizationId, financeUserId: actorUserId });
   });

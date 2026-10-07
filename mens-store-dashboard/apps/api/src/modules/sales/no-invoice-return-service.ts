@@ -3,6 +3,7 @@ import type { CreateNoInvoiceReturnInput, Customer, Product, Warehouse } from '@
 import { calculateSale } from './calculation.js';
 
 export type PendingNoInvoiceReturn = { id: string; organizationId: string; total: string; status: 'PENDING_APPROVAL' };
+export type PendingNoInvoiceApproval = PendingNoInvoiceReturn & { customerId: string; warehouseId: string; actorUserId: string; reason: string; occurredAt: Date };
 
 export interface NoInvoiceReturnsRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PendingNoInvoiceReturn | null>;
@@ -37,6 +38,7 @@ export function createNoInvoiceReturnService(repository: NoInvoiceReturnsReposit
 }
 
 export interface NoInvoiceApprovalRepository {
+  listPending(organizationId: string): Promise<PendingNoInvoiceApproval[]>;
   findPending(id: string, organizationId: string): Promise<PendingNoInvoiceReturn | null>;
   approve(input: { id: string; organizationId: string; financeUserId: string }): Promise<ApproveNoInvoiceReturnResult>;
 }
@@ -47,6 +49,9 @@ export type ApproveNoInvoiceReturnResult =
 
 export function createNoInvoiceApprovalService(repository: NoInvoiceApprovalRepository) {
   return {
+    async listPending(organizationId: string): Promise<PendingNoInvoiceApproval[]> {
+      return repository.listPending(organizationId);
+    },
     async approve(organizationId: string, financeUserId: string, returnId: string): Promise<ApproveNoInvoiceReturnResult> {
       const pending = await repository.findPending(returnId, organizationId);
       if (!pending) return { ok: false, reason: 'RETURN_NOT_PENDING' };

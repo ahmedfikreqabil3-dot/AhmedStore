@@ -250,6 +250,10 @@ const noInvoiceReturnService = createNoInvoiceReturnService({
 });
 
 const noInvoiceApprovalService = createNoInvoiceApprovalService({
+  async listPending(organizationId) {
+    const returns = await prisma.salesReturn.findMany({ where: { organizationId, saleId: null, status: 'PENDING_APPROVAL' }, orderBy: { occurredAt: 'asc' } });
+    return returns.map((salesReturn) => ({ id: salesReturn.id, organizationId: salesReturn.organizationId, customerId: salesReturn.customerId, warehouseId: salesReturn.warehouseId, actorUserId: salesReturn.actorUserId, reason: salesReturn.reason, total: salesReturn.total.toFixed(4), status: 'PENDING_APPROVAL' as const, occurredAt: salesReturn.occurredAt }));
+  },
   async findPending(id, organizationId) {
     const salesReturn = await prisma.salesReturn.findFirst({ where: { id, organizationId, saleId: null, status: 'PENDING_APPROVAL' } });
     return salesReturn && { id: salesReturn.id, organizationId: salesReturn.organizationId, total: salesReturn.total.toFixed(4), status: 'PENDING_APPROVAL' as const };

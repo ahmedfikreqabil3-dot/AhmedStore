@@ -55,6 +55,7 @@ export interface NoInvoiceReturnService {
 }
 
 export interface NoInvoiceApprovalService {
+  listPending(organizationId: string): Promise<Array<{ id: string; organizationId: string; customerId: string; warehouseId: string; actorUserId: string; reason: string; total: string; status: 'PENDING_APPROVAL'; occurredAt: Date }>>;
   approve(organizationId: string, financeUserId: string, returnId: string): Promise<{ ok: true; salesReturn: { id: string } } | { ok: false; reason: string }>;
 }
 
@@ -249,6 +250,13 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await noInvoiceReturnService!.submit(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.salesReturn);
+  });
+
+  app.get('/api/v1/returns/no-invoice/pending', { schema: { summary: 'List no-invoice returns awaiting Finance approval', tags: ['Sales'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'returns:approve_no_invoice')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { returns: await noInvoiceApprovalService!.listPending(authenticated.user.organizationId) };
   });
 
   app.post('/api/v1/returns/:returnId/approve', { schema: { summary: 'Approve and post a pending no-invoice return', tags: ['Sales'] } }, async (request, reply) => {
