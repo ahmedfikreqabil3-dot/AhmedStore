@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createUserSchema, healthResponseSchema, loginSchema, registerUserSchema, type PublicUser } from '@ahmed-store/contracts';
+import { createCategorySchema, createUserSchema, healthResponseSchema, loginSchema, registerUserSchema, type Category, type CreateCategoryInput, type PublicUser } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -14,6 +14,11 @@ export interface UserDirectoryService {
   list(organizationId: string): Promise<PublicUser[]>;
 }
 
+export interface CategoryService {
+  list(organizationId: string): Promise<Category[]>;
+  create(organizationId: string, input: CreateCategoryInput): Promise<{ ok: true; category: Category } | { ok: false; reason: 'CATEGORY_EXISTS' }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -23,7 +28,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -73,6 +78,24 @@ export async function buildApp(identityService: IdentityService, authenticationS
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     await identityService.auditUserCreated(authenticated.user.id, result.user);
     return reply.code(201).send(result.user);
+  });
+
+  app.get('/api/v1/categories', { schema: { summary: 'List active product categories', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { categories: await categoryService.list(authenticated.user.organizationId) };
+  });
+
+  app.post('/api/v1/categories', { schema: { summary: 'Create a product category', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = createCategorySchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_CATEGORY' });
+    const result = await categoryService.create(authenticated.user.organizationId, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(201).send(result.category);
   });
 
   return app;

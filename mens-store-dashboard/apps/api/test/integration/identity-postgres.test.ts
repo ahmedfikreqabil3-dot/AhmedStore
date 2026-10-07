@@ -5,6 +5,7 @@ import { buildApp } from '../../src/app.js';
 import { createIdentityService } from '../../src/modules/identity/service.js';
 import { createSessionService } from '../../src/modules/identity/session.js';
 import { hashPassword } from '../../src/modules/identity/password.js';
+import { createCategoryService } from '../../src/modules/catalogue/category.js';
 
 const prisma = new PrismaClient();
 let organizationId = '';
@@ -39,7 +40,17 @@ const userDirectoryService = {
   }
 };
 
-const app = await buildApp(identityService, authenticationService, userDirectoryService);
+const categoryService = createCategoryService({
+  async list(currentOrganizationId) { return prisma.category.findMany({ where: { organizationId: currentOrganizationId, archivedAt: null } }); },
+  async findByName(currentOrganizationId, name) { return prisma.category.findUnique({ where: { organizationId_name: { organizationId: currentOrganizationId, name } } }); },
+  async create(category) { return prisma.category.create({ data: category }); },
+  async archive(id, currentOrganizationId, archivedAt) {
+    const updated = await prisma.category.updateMany({ where: { id, organizationId: currentOrganizationId, archivedAt: null }, data: { archivedAt } });
+    return updated.count === 0 ? null : prisma.category.findUnique({ where: { id } });
+  }
+});
+
+const app = await buildApp(identityService, authenticationService, userDirectoryService, categoryService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });
