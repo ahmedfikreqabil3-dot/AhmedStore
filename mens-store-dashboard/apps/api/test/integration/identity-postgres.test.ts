@@ -130,4 +130,19 @@ describe('identity registration against PostgreSQL', () => {
     expect(movement.quantity.toFixed(4)).toBe('5.2500');
     await expect(prisma.inventoryTransaction.create({ data: { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'ADJUSTMENT', quantity: new Prisma.Decimal('0'), referenceType: 'TEST', referenceId: product.id } })).rejects.toThrow();
   });
+
+  it('reconstructs warehouse stock accurately at a historical cutoff', async () => {
+    const warehouse = await prisma.warehouse.create({ data: { organizationId, name: 'History Warehouse' } });
+    const otherWarehouse = await prisma.warehouse.create({ data: { organizationId, name: 'Other Warehouse' } });
+    const product = await prisma.product.create({ data: { organizationId, name: 'History Product', sku: `HISTORY-${randomUUID()}`, salePrice: new Prisma.Decimal('10.0000'), costPrice: new Prisma.Decimal('5.0000') } });
+    await prisma.inventoryTransaction.createMany({ data: [
+      { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'OPENING_BALANCE', quantity: new Prisma.Decimal('10.0000'), referenceType: 'OPENING', referenceId: product.id, occurredAt: new Date('2026-01-01T00:00:00Z') },
+      { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'SALE_ISSUE', quantity: new Prisma.Decimal('-3.0000'), referenceType: 'SALE', referenceId: product.id, occurredAt: new Date('2026-01-03T00:00:00Z') },
+      { organizationId, warehouseId: otherWarehouse.id, productId: product.id, type: 'OPENING_BALANCE', quantity: new Prisma.Decimal('50.0000'), referenceType: 'OPENING', referenceId: product.id, occurredAt: new Date('2026-01-01T00:00:00Z') }
+    ] });
+    const historical = await prisma.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId, warehouseId: warehouse.id, productId: product.id, occurredAt: { lte: new Date('2026-01-02T00:00:00Z') } } });
+    const current = await prisma.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId, warehouseId: warehouse.id, productId: product.id } });
+    expect(historical._sum.quantity?.toFixed(4)).toBe('10.0000');
+    expect(current._sum.quantity?.toFixed(4)).toBe('7.0000');
+  });
 });
