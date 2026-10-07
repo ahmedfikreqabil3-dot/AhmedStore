@@ -19,6 +19,7 @@ model Organization {
   products Product[]
   warehouses Warehouse[]
   customers Customer[]
+  sales Sale[]
   inventoryTransactions InventoryTransaction[]
 }
 
@@ -40,6 +41,19 @@ enum InventoryMovementType {
   TRANSFER_IN
   ADJUSTMENT
   REVERSAL
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  WALLET
+  INSTAPAY
+  CREDIT
+}
+
+enum SaleStatus {
+  POSTED
+  VOIDED
 }
 
 model User {
@@ -120,6 +134,7 @@ model Product {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   inventoryTransactions InventoryTransaction[]
+  saleLines SaleLine[]
 
   @@unique([organizationId, sku])
   @@unique([organizationId, barcode])
@@ -136,6 +151,7 @@ model Warehouse {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   inventoryTransactions InventoryTransaction[]
+  sales Sale[]
 
   @@unique([organizationId, name])
   @@index([organizationId, active])
@@ -156,10 +172,65 @@ model Customer {
   version        Int      @default(1)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  sales          Sale[]
 
   @@unique([organizationId, legacyId])
   @@index([organizationId, active, name])
   @@index([organizationId, phone])
+}
+
+model Sale {
+  id             String     @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  actorUserId    String
+  subtotal       Decimal    @db.Decimal(19, 4)
+  discount       Decimal    @db.Decimal(19, 4)
+  total          Decimal    @db.Decimal(19, 4)
+  status         SaleStatus @default(POSTED)
+  idempotencyKey String?
+  occurredAt     DateTime
+  createdAt      DateTime   @default(now())
+  lines          SaleLine[]
+  payments       SalePayment[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, customerId, occurredAt])
+  @@index([organizationId, warehouseId, occurredAt])
+}
+
+model SaleLine {
+  id          String   @id @default(uuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  lineNumber  Int
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String
+  sku         String
+  quantity    Decimal  @db.Decimal(19, 4)
+  unitPrice   Decimal  @db.Decimal(19, 4)
+  discount    Decimal  @db.Decimal(19, 4)
+  total       Decimal  @db.Decimal(19, 4)
+
+  @@unique([saleId, lineNumber])
+  @@index([productId])
+}
+
+model SalePayment {
+  id        String        @id @default(uuid())
+  saleId    String
+  sale      Sale          @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(19, 4)
+  createdAt DateTime      @default(now())
+
+  @@index([saleId, method])
 }
 
 model InventoryTransaction {
