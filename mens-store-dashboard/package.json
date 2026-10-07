@@ -1,0 +1,33 @@
+{
+  "name": "ahmed-store-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "coverage": "npm run coverage --workspace=@ahmed-store/contracts && npm run coverage --workspace=@ahmed-store/api && npm run coverage --workspace=@ahmed-store/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:validate": "cross-env DATABASE_URL=postgresql://ahmed_store:ahmed_store@localhost:5432/ahmed_store prisma validate --schema database/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "cross-env": "^7.0.3",
+    "prisma": "6.19.0",
+    "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.0": true,
+    "@prisma/engines@6.19.0": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true,
+    "prisma@6.19.0": true
+  }
+}
