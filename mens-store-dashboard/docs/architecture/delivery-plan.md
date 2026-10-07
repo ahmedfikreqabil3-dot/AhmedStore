@@ -48,7 +48,9 @@ available from `legacy/`.
 
 ## Phase 2 — Identity, tenancy, and access control
 
-**Status:** In progress. Blocked from completion until a real PostgreSQL integration-test service is available.
+**Status:** In progress. A local PostgreSQL 17 integration environment is
+available and verified on 2026-10-07; remaining identity deliverables are not
+yet complete.
 
 **Deliverables:** Organization/User/Role/Session/Audit schema migrations,
 password/session management, RBAC middleware, organization scoping, and OpenAPI

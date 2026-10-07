@@ -15,11 +15,10 @@
     "test": "npm run test --workspaces --if-present",
     "coverage": "npm run coverage --workspace=@ahmed-store/contracts && npm run coverage --workspace=@ahmed-store/api && npm run coverage --workspace=@ahmed-store/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "db:validate": "cross-env DATABASE_URL=postgresql://ahmed_store:ahmed_store@localhost:5432/ahmed_store prisma validate --schema database/prisma/schema.prisma"
+    "db:validate": "prisma validate --schema database/prisma/schema.prisma"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "cross-env": "^7.0.3",
     "prisma": "6.19.0",
     "typescript": "^5.9.0"
   },
