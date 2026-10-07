@@ -28,3 +28,18 @@ export const createSaleSchema = z.object({
   occurredAt: z.coerce.date()
 });
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
+
+export const invoiceReturnLineInputSchema = z.object({
+  saleLineId: z.string().uuid(),
+  quantity: positiveDecimalStringSchema
+});
+export type InvoiceReturnLineInput = z.infer<typeof invoiceReturnLineInputSchema>;
+
+export const createInvoiceReturnSchema = z.object({
+  saleId: z.string().uuid(),
+  lines: z.array(invoiceReturnLineInputSchema).min(1),
+  payments: z.array(salePaymentInputSchema).min(1),
+  reason: z.string().trim().min(3).max(500),
+  occurredAt: z.coerce.date()
+});
+export type CreateInvoiceReturnInput = z.infer<typeof createInvoiceReturnSchema>;
