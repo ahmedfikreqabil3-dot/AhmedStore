@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createProductSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, type Category, type CreateCategoryInput, type CreateProductInput, type CreateWarehouseInput, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createProductSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateProductInput, type CreateWarehouseInput, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -29,6 +29,10 @@ export interface WarehouseService {
   create(organizationId: string, input: CreateWarehouseInput): Promise<{ ok: true; warehouse: Warehouse } | { ok: false; reason: 'WAREHOUSE_EXISTS' }>;
 }
 
+export interface StockService {
+  quantityAsOf(organizationId: string, productId: string, asOf: Date, warehouseId?: string): Promise<string>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -38,7 +42,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -142,6 +146,15 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await warehouseService.create(authenticated.user.organizationId, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(201).send(result.warehouse);
+  });
+
+  app.get('/api/v1/inventory/stock', { schema: { summary: 'Get stock at a historical point in time', tags: ['Inventory'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = stockQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_STOCK_QUERY' });
+    return { quantity: await stockService.quantityAsOf(authenticated.user.organizationId, parsed.data.productId, parsed.data.asOf, parsed.data.warehouseId) };
   });
 
   return app;

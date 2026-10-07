@@ -5,6 +5,7 @@ import { createSessionService } from './modules/identity/session.js';
 import { createCategoryService } from './modules/catalogue/category.js';
 import { createProductService } from './modules/catalogue/product.js';
 import { createWarehouseService } from './modules/catalogue/warehouse.js';
+import { createStockService } from './modules/inventory/stock.js';
 
 const prisma = new PrismaClient();
 const identityService = createIdentityService({
@@ -87,4 +88,14 @@ const warehouseService = createWarehouseService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService);
+const stockService = createStockService({
+  async quantityAsOf({ organizationId, productId, warehouseId, asOf }) {
+    const balance = await prisma.inventoryTransaction.aggregate({
+      _sum: { quantity: true },
+      where: { organizationId, productId, warehouseId, occurredAt: { lte: asOf } }
+    });
+    return balance._sum.quantity?.toFixed(4) ?? '0.0000';
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCategorySchema, createProductSchema, createWarehouseSchema } from '../src/catalogue.js';
+import { createCategorySchema, createProductSchema, createWarehouseSchema, stockQuerySchema } from '../src/catalogue.js';
 
 describe('catalogue contracts', () => {
   it('trims valid category names', () => {
@@ -21,5 +21,10 @@ describe('catalogue contracts', () => {
 
   it('trims warehouse names', () => {
     expect(createWarehouseSchema.parse({ name: ' Main warehouse ' })).toEqual({ name: 'Main warehouse' });
+  });
+
+  it('accepts a product, optional warehouse, and historical stock boundary', () => {
+    expect(stockQuerySchema.parse({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', asOf: '2026-01-01T00:00:00.000Z' })).toMatchObject({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f' });
+    expect(stockQuerySchema.safeParse({ productId: 'not-a-uuid', asOf: 'bad-date' }).success).toBe(false);
   });
 });

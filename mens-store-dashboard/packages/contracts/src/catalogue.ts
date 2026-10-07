@@ -42,3 +42,10 @@ export type Warehouse = z.infer<typeof warehouseSchema>;
 
 export const createWarehouseSchema = warehouseSchema.pick({ name: true });
 export type CreateWarehouseInput = z.infer<typeof createWarehouseSchema>;
+
+export const stockQuerySchema = z.object({
+  productId: z.string().uuid(),
+  warehouseId: z.string().uuid().optional(),
+  asOf: z.coerce.date()
+});
+export type StockQuery = z.infer<typeof stockQuerySchema>;

@@ -7,10 +7,11 @@ const userDirectoryService = { list: async () => [] };
 const categoryService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'CATEGORY_EXISTS' as const }) };
 const productService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'SKU_EXISTS' as const }) };
 const warehouseService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'WAREHOUSE_EXISTS' as const }) };
+const stockService = { quantityAsOf: async () => '0.0000' };
 
 describe('API server', () => {
   it('starts on an ephemeral port', async () => {
-    const app = await startServer(0, identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService);
+    const app = await startServer(0, identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService);
 
     expect(app.server.listening).toBe(true);
     await app.close();
