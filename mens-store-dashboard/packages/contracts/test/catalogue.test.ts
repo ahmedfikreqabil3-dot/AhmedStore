@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCategorySchema, createProductSchema } from '../src/catalogue.js';
+import { createCategorySchema, createProductSchema, createWarehouseSchema } from '../src/catalogue.js';
 
 describe('catalogue contracts', () => {
   it('trims valid category names', () => {
@@ -17,5 +17,9 @@ describe('catalogue contracts', () => {
 
   it('rejects numeric values outside the supported decimal contract', () => {
     expect(createProductSchema.safeParse({ name: 'Oxford Shirt', sku: 'SH-1', barcode: null, categoryId: null, salePrice: '1.12345', costPrice: '1' }).success).toBe(false);
+  });
+
+  it('trims warehouse names', () => {
+    expect(createWarehouseSchema.parse({ name: ' Main warehouse ' })).toEqual({ name: 'Main warehouse' });
   });
 });

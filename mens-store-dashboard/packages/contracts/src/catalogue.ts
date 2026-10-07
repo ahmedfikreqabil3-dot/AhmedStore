@@ -31,3 +31,14 @@ export type Product = z.infer<typeof productSchema>;
 
 export const createProductSchema = productSchema.pick({ name: true, sku: true, barcode: true, categoryId: true, salePrice: true, costPrice: true }).transform((value) => ({ ...value, sku: value.sku.toUpperCase() }));
 export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+export const warehouseSchema = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  name: z.string().trim().min(2).max(120),
+  active: z.boolean()
+});
+export type Warehouse = z.infer<typeof warehouseSchema>;
+
+export const createWarehouseSchema = warehouseSchema.pick({ name: true });
+export type CreateWarehouseInput = z.infer<typeof createWarehouseSchema>;
