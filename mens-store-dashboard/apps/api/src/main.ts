@@ -26,4 +26,11 @@ const authenticationService = createSessionService({
   async createAuditEvent(input) { await prisma.auditEvent.create({ data: input }); }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService);
+const userDirectoryService = {
+  async list(organizationId: string) {
+    const users = await prisma.user.findMany({ where: { organizationId }, orderBy: { createdAt: 'asc' } });
+    return users.map(({ passwordHash: _passwordHash, active: _active, ...user }) => user);
+  }
+};
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService);

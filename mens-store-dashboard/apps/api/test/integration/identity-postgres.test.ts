@@ -7,6 +7,7 @@ import { createSessionService } from '../../src/modules/identity/session.js';
 
 const prisma = new PrismaClient();
 let organizationId = '';
+let otherOrganizationId = '';
 
 const identityService = createIdentityService({
   async findByEmail(currentOrganizationId, email) {
@@ -27,11 +28,20 @@ const authenticationService = createSessionService({
   async createAuditEvent(input) { await prisma.auditEvent.create({ data: input }); }
 });
 
-const app = buildApp(identityService, authenticationService);
+const userDirectoryService = {
+  async list(currentOrganizationId: string) {
+    const users = await prisma.user.findMany({ where: { organizationId: currentOrganizationId }, orderBy: { createdAt: 'asc' } });
+    return users.map(({ passwordHash: _passwordHash, active: _active, ...user }) => user);
+  }
+};
+
+const app = buildApp(identityService, authenticationService, userDirectoryService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });
   organizationId = organization.id;
+  const otherOrganization = await prisma.organization.create({ data: { name: 'Other Integration Store' } });
+  otherOrganizationId = otherOrganization.id;
   await app.ready();
 });
 
@@ -39,11 +49,13 @@ afterEach(async () => {
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { organizationId } });
   await prisma.user.deleteMany({ where: { organizationId } });
+  await prisma.user.deleteMany({ where: { organizationId: otherOrganizationId } });
 });
 
 afterAll(async () => {
   await app.close();
   await prisma.organization.delete({ where: { id: organizationId } });
+  await prisma.organization.delete({ where: { id: otherOrganizationId } });
   await prisma.$disconnect();
 });
 
@@ -74,6 +86,10 @@ describe('identity registration against PostgreSQL', () => {
     const cookie = String(login.headers['set-cookie']).split(';')[0];
     expect(login.statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie } })).statusCode).toBe(200);
+    await prisma.user.create({ data: { organizationId: otherOrganizationId, name: 'Other Store User', email: `other-${randomUUID()}@example.test`, passwordHash: 'not-used', role: 'ADMIN' } });
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie } });
+    expect(listed.json().users).toHaveLength(1);
+    expect(listed.json().users[0]).toMatchObject({ email: body.email, organizationId });
     expect((await app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { cookie } })).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie } })).statusCode).toBe(401);
     expect(await prisma.auditEvent.count({ where: { organizationId, action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } } })).toBe(2);

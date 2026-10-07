@@ -22,10 +22,11 @@ const registeredUser = {
   email: input.email,
   role: 'ADMIN' as const
 };
+const userDirectoryService = { list: async () => [registeredUser] };
 
 describe('API health endpoint', () => {
   it('returns the versioned API health response', async () => {
-    const app = buildApp({ register: async () => ({ ok: true, user: registeredUser }) }, authenticationService);
+    const app = buildApp({ register: async () => ({ ok: true, user: registeredUser }) }, authenticationService, userDirectoryService);
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
 
     expect(response.statusCode).toBe(200);
@@ -34,7 +35,7 @@ describe('API health endpoint', () => {
   });
 
   it('registers valid users and rejects invalid registration data', async () => {
-    const app = buildApp({ register: async () => ({ ok: true, user: registeredUser }) }, authenticationService);
+    const app = buildApp({ register: async () => ({ ok: true, user: registeredUser }) }, authenticationService, userDirectoryService);
 
     const created = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: input });
     const invalid = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: {} });
@@ -46,7 +47,7 @@ describe('API health endpoint', () => {
   });
 
   it('reports duplicate organization emails', async () => {
-    const app = buildApp({ register: async () => ({ ok: false, reason: 'EMAIL_TAKEN' }) }, authenticationService);
+    const app = buildApp({ register: async () => ({ ok: false, reason: 'EMAIL_TAKEN' }) }, authenticationService, userDirectoryService);
     const response = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: input });
 
     expect(response.statusCode).toBe(409);
@@ -63,7 +64,7 @@ describe('API health endpoint', () => {
         : ({ ok: false as const, reason: 'UNAUTHENTICATED' as const }),
       logout: async (token: string | undefined) => { loggedOutToken = token; }
     };
-    const app = buildApp({ register: async () => ({ ok: true as const, user: registeredUser }) }, auth);
+    const app = buildApp({ register: async () => ({ ok: true as const, user: registeredUser }) }, auth, userDirectoryService);
     const invalid = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: {} });
     const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { organizationId: input.organizationId, email: input.email, password: 'a-secure-password' } });
     const unauthorized = await app.inject({ method: 'GET', url: '/api/v1/auth/me' });
@@ -83,9 +84,22 @@ describe('API health endpoint', () => {
   });
 
   it('returns an authentication error for rejected login credentials', async () => {
-    const app = buildApp({ register: async () => ({ ok: true as const, user: registeredUser }) }, authenticationService);
+    const app = buildApp({ register: async () => ({ ok: true as const, user: registeredUser }) }, authenticationService, userDirectoryService);
     const response = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { organizationId: input.organizationId, email: input.email, password: 'a-secure-password' } });
     expect(response.statusCode).toBe(401);
     await app.close();
+  });
+
+  it('enforces authentication and the users-manage permission for tenant-scoped users', async () => {
+    const adminAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: registeredUser }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const identity = { register: async () => ({ ok: true as const, user: registeredUser }) };
+    const anonymous = buildApp(identity, authenticationService, userDirectoryService);
+    const cashier = buildApp(identity, cashierAuth, userDirectoryService);
+    const admin = buildApp(identity, adminAuth, userDirectoryService);
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/users' })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie: 'session=token' } })).statusCode).toBe(403);
+    expect((await admin.inject({ method: 'GET', url: '/api/v1/users', headers: { cookie: 'session=token' } })).json()).toEqual({ users: [registeredUser] });
+    await Promise.all([anonymous.close(), cashier.close(), admin.close()]);
   });
 });

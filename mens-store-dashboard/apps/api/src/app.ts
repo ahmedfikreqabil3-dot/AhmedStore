@@ -1,10 +1,15 @@
 import Fastify from 'fastify';
-import { healthResponseSchema, loginSchema, registerUserSchema } from '@ahmed-store/contracts';
+import { healthResponseSchema, loginSchema, registerUserSchema, type PublicUser } from '@ahmed-store/contracts';
+import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
 
 export interface IdentityService {
   register(input: ReturnType<typeof registerUserSchema.parse>): Promise<RegistrationResult>;
+}
+
+export interface UserDirectoryService {
+  list(organizationId: string): Promise<PublicUser[]>;
 }
 
 function readSessionToken(cookie: string | undefined) {
@@ -16,7 +21,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export function buildApp(identityService: IdentityService, authenticationService: AuthenticationService) {
+export function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService) {
   const app = Fastify({ logger: false });
 
   app.get('/api/v1/health', async () => healthResponseSchema.parse({ status: 'ok', service: 'api' }));
@@ -48,6 +53,13 @@ export function buildApp(identityService: IdentityService, authenticationService
   app.post('/api/v1/auth/logout', async (request, reply) => {
     await authenticationService.logout(readSessionToken(request.headers.cookie));
     return reply.code(204).header('set-cookie', sessionCookie('', true)).send();
+  });
+
+  app.get('/api/v1/users', async (request, reply) => {
+    const result = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!result.ok) return reply.code(401).send({ error: result.reason });
+    if (!can(result.user.role, 'users:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { users: await userDirectoryService.list(result.user.organizationId) };
   });
 
   return app;
