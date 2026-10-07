@@ -28,6 +28,10 @@ introduced before multi-warehouse POS cutover. The API checks both permission
 and organization/warehouse scope on every route; the frontend only reflects
 permissions for usability and is never the security boundary.
 
+`FINANCE` is the dedicated approver for no-invoice returns. `ADMIN` retains
+the same approval permission as an emergency/ownership override; managers can
+enter a proposed valuation but cannot self-approve it.
+
 ## Security acceptance checks
 
 - Anonymous requests to protected endpoints return 401.

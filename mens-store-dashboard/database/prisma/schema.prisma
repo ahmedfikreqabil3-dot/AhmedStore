@@ -23,6 +23,7 @@ model Organization {
 
 enum Role {
   ADMIN
+  FINANCE
   MANAGER
   CASHIER
   WAREHOUSE

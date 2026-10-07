@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const roleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER', 'WAREHOUSE']);
+export const roleSchema = z.enum(['ADMIN', 'FINANCE', 'MANAGER', 'CASHIER', 'WAREHOUSE']);
 export type Role = z.infer<typeof roleSchema>;
 
 export const registerUserSchema = z.object({

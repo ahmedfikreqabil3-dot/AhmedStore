@@ -24,9 +24,8 @@ testing. No legacy screen is removed merely because a replacement is scaffolded.
 ## Required decisions before posting behavior is implemented
 
 1. **No-invoice return valuation:** **decided 2026-10-08** — manager-entered
-   value with mandatory reason and finance approval. The finance-approver role
-   mapping must be defined before ENH-10 is released because the current role
-   set contains no dedicated finance role.
+   value with mandatory reason and finance approval. **Decided 2026-10-08:**
+   `FINANCE` is the approver role; `ADMIN` has an approval override.
 2. **Posted document editing:** recommended: show “Edit”, but technically post
    a compensating reversal plus a replacement document to preserve auditability.
 3. **Export row grain:** recommended: one row per sale line for detailed export,
