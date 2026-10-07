@@ -9,6 +9,7 @@ import { createStockService } from './modules/inventory/stock.js';
 import { createInventoryMovementService } from './modules/inventory/movement.js';
 import { createCustomerService } from './modules/parties/customer.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
+import { createInvoiceReturnService } from './modules/sales/return-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -189,4 +190,40 @@ const salesService = createSalesService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService);
+const invoiceReturnService = createInvoiceReturnService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const salesReturn = await prisma.salesReturn.findFirst({ where: { organizationId, idempotencyKey } });
+    return salesReturn && { id: salesReturn.id, saleId: salesReturn.saleId!, total: salesReturn.total.toFixed(4) };
+  },
+  async findSale(id, organizationId) {
+    const sale = await prisma.sale.findFirst({ where: { id, organizationId, status: 'POSTED' }, include: { lines: true } });
+    return sale && { id: sale.id, customerId: sale.customerId, warehouseId: sale.warehouseId, lines: sale.lines.map((line) => ({ id: line.id, productId: line.productId, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), total: line.total.toFixed(4) })) };
+  },
+  async returnedQuantity(saleLineId, organizationId) {
+    const quantity = await prisma.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId, salesReturn: { organizationId, status: 'POSTED' } } });
+    return (quantity._sum.quantity ?? new Prisma.Decimal(0)).toFixed(4);
+  },
+  async post(command) {
+    return prisma.$transaction(async (transaction) => {
+      const requestedBySaleLine = new Map<string, Prisma.Decimal>();
+      for (const line of command.input.lines) {
+        const quantity = new Prisma.Decimal(line.quantity);
+        requestedBySaleLine.set(line.saleLineId, requestedBySaleLine.get(line.saleLineId)?.plus(quantity) ?? quantity);
+      }
+      for (const [saleLineId, requested] of requestedBySaleLine) {
+        const saleLine = command.sale.lines.find((line) => line.id === saleLineId)!;
+        const returned = await transaction.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId, salesReturn: { organizationId: command.organizationId, status: 'POSTED' } } });
+        if (requested.plus(returned._sum.quantity ?? 0).greaterThan(new Prisma.Decimal(saleLine.quantity))) return { ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' as const };
+      }
+      const total = new Prisma.Decimal(command.calculated.total);
+      const paid = command.input.payments.reduce((sum, payment) => sum.plus(payment.amount), new Prisma.Decimal(0));
+      if (!paid.equals(total)) return { ok: false as const, reason: 'PAYMENT_TOTAL_MISMATCH' as const };
+      const salesReturn = await transaction.salesReturn.create({ data: { id: command.id, organizationId: command.organizationId, saleId: command.sale.id, customerId: command.sale.customerId, warehouseId: command.sale.warehouseId, actorUserId: command.actorUserId, reason: command.input.reason, total, status: 'POSTED', idempotencyKey: command.idempotencyKey, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), saleLineId: line.saleLineId, productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
+      await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.sale.warehouseId, productId: line.productId, type: 'SALE_RETURN', quantity: line.quantity, referenceType: 'SalesReturn', referenceId: salesReturn.id, occurredAt: command.input.occurredAt })) });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALES_RETURN_POSTED', entityType: 'SalesReturn', entityId: salesReturn.id } });
+      return { ok: true as const, salesReturn: { id: salesReturn.id, saleId: salesReturn.saleId!, total: salesReturn.total.toFixed(4) } };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService);

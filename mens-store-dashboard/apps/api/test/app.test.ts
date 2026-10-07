@@ -248,4 +248,25 @@ describe('API health endpoint', () => {
     expect((await cashier.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
     await Promise.all([cashier.close(), anonymous.close(), warehouse.close()]);
   });
+
+  it('posts only valid idempotent invoice returns for sales roles', async () => {
+    const saleId = 'f710274a-4b51-49bd-a31f-d6a8ab81b01a';
+    const saleLineId = 'a0ac2c74-c66c-4a28-b658-34c88db36e8a';
+    const body = { saleId, lines: [{ saleLineId, quantity: '1.0000' }], payments: [{ method: 'CASH', amount: '10.0000' }], reason: 'Wrong size', occurredAt: '2026-01-01T00:00:00.000Z' };
+    const returns = { post: async (_organizationId: string, _actorUserId: string, key: string) => key === 'exceeded' ? ({ ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' }) : ({ ok: true as const, salesReturn: { id: '9f112860-9eb3-402f-b722-740616412a85' }, replayed: key === 'replay' }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const warehouseAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'WAREHOUSE' as const } }) };
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, returns);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, returns);
+    const warehouse = await buildApp(successIdentity, warehouseAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, returns);
+
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/returns', payload: body })).statusCode).toBe(401);
+    expect((await warehouse.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(403);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: {} })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'exceeded' }, payload: body })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(201);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
+    await Promise.all([cashier.close(), anonymous.close(), warehouse.close()]);
+  });
 });

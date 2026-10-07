@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CreateInvoiceReturnInput } from '@ahmed-store/contracts';
+import { calculateInvoiceReturn, type CalculatedReturn } from './return-calculation.js';
 
 type SaleLineForReturn = { id: string; productId: string; quantity: string; unitPrice: string; total: string };
 export type ReturnableSale = { id: string; customerId: string; warehouseId: string; lines: SaleLineForReturn[] };
@@ -9,7 +10,7 @@ export interface ReturnsRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PostedReturn | null>;
   findSale(id: string, organizationId: string): Promise<ReturnableSale | null>;
   returnedQuantity(saleLineId: string, organizationId: string): Promise<string>;
-  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreateInvoiceReturnInput; sale: ReturnableSale }): Promise<{ ok: true; salesReturn: PostedReturn } | { ok: false; reason: 'PAYMENT_TOTAL_MISMATCH' }>;
+  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreateInvoiceReturnInput; sale: ReturnableSale; calculated: CalculatedReturn }): Promise<{ ok: true; salesReturn: PostedReturn } | { ok: false; reason: 'PAYMENT_TOTAL_MISMATCH' | 'RETURN_QUANTITY_EXCEEDED' }>;
 }
 
 function decimalToUnits(value: string) {
@@ -36,7 +37,7 @@ export function createInvoiceReturnService(repository: ReturnsRepository) {
         const returned = decimalToUnits(await repository.returnedQuantity(saleLineId, organizationId));
         if (requested + returned > decimalToUnits(saleLine.quantity)) return { ok: false, reason: 'RETURN_QUANTITY_EXCEEDED' };
       }
-      const posted = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, sale });
+      const posted = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, sale, calculated: calculateInvoiceReturn(sale, input) });
       return posted.ok ? { ok: true, salesReturn: posted.salesReturn, replayed: false } : posted;
     }
   };
