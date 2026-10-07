@@ -54,6 +54,10 @@ export interface NoInvoiceReturnService {
   submit(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateNoInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 
+export interface NoInvoiceApprovalService {
+  approve(organizationId: string, financeUserId: string, returnId: string): Promise<{ ok: true; salesReturn: { id: string } } | { ok: false; reason: string }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -63,7 +67,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -245,6 +249,16 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await noInvoiceReturnService!.submit(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.salesReturn);
+  });
+
+  app.post('/api/v1/returns/:returnId/approve', { schema: { summary: 'Approve and post a pending no-invoice return', tags: ['Sales'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'returns:approve_no_invoice')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const { returnId } = request.params as { returnId: string };
+    const result = await noInvoiceApprovalService!.approve(authenticated.user.organizationId, authenticated.user.id, returnId);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return result.salesReturn;
   });
 
   return app;

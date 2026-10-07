@@ -10,7 +10,7 @@ import { createInventoryMovementService } from './modules/inventory/movement.js'
 import { createCustomerService } from './modules/parties/customer.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
-import { createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
+import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -249,4 +249,21 @@ const noInvoiceReturnService = createNoInvoiceReturnService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService);
+const noInvoiceApprovalService = createNoInvoiceApprovalService({
+  async findPending(id, organizationId) {
+    const salesReturn = await prisma.salesReturn.findFirst({ where: { id, organizationId, saleId: null, status: 'PENDING_APPROVAL' } });
+    return salesReturn && { id: salesReturn.id, organizationId: salesReturn.organizationId, total: salesReturn.total.toFixed(4), status: 'PENDING_APPROVAL' as const };
+  },
+  async approve({ id, organizationId, financeUserId }) {
+    return prisma.$transaction(async (transaction) => {
+      const pending = await transaction.salesReturn.findFirst({ where: { id, organizationId, saleId: null, status: 'PENDING_APPROVAL' }, include: { lines: true } });
+      if (!pending) return { ok: false as const, reason: 'RETURN_NOT_PENDING' as const };
+      const salesReturn = await transaction.salesReturn.update({ where: { id: pending.id }, data: { status: 'POSTED', approvedByUserId: financeUserId } });
+      await transaction.inventoryTransaction.createMany({ data: pending.lines.map((line) => ({ id: crypto.randomUUID(), organizationId, warehouseId: pending.warehouseId, productId: line.productId, type: 'SALE_RETURN', quantity: line.quantity, referenceType: 'SalesReturn', referenceId: pending.id, occurredAt: pending.occurredAt })) });
+      await transaction.auditEvent.create({ data: { organizationId, actorUserId: financeUserId, action: 'NO_INVOICE_RETURN_APPROVED', entityType: 'SalesReturn', entityId: pending.id } });
+      return { ok: true as const, salesReturn: { id: salesReturn.id, total: salesReturn.total.toFixed(4) } };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService);

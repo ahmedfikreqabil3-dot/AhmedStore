@@ -38,7 +38,7 @@ export function createNoInvoiceReturnService(repository: NoInvoiceReturnsReposit
 
 export interface NoInvoiceApprovalRepository {
   findPending(id: string, organizationId: string): Promise<PendingNoInvoiceReturn | null>;
-  approve(input: { id: string; organizationId: string; financeUserId: string }): Promise<{ id: string; total: string }>;
+  approve(input: { id: string; organizationId: string; financeUserId: string }): Promise<ApproveNoInvoiceReturnResult>;
 }
 
 export type ApproveNoInvoiceReturnResult =
@@ -50,7 +50,7 @@ export function createNoInvoiceApprovalService(repository: NoInvoiceApprovalRepo
     async approve(organizationId: string, financeUserId: string, returnId: string): Promise<ApproveNoInvoiceReturnResult> {
       const pending = await repository.findPending(returnId, organizationId);
       if (!pending) return { ok: false, reason: 'RETURN_NOT_PENDING' };
-      return { ok: true, salesReturn: await repository.approve({ id: returnId, organizationId, financeUserId }) };
+      return repository.approve({ id: returnId, organizationId, financeUserId });
     }
   };
 }

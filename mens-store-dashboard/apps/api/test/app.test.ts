@@ -291,4 +291,20 @@ describe('API health endpoint', () => {
     expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
     await Promise.all([manager.close(), anonymous.close(), finance.close()]);
   });
+
+  it('allows Finance or Admin to approve a pending no-invoice return', async () => {
+    const returnId = '9f112860-9eb3-402f-b722-740616412a85';
+    const approvals = { approve: async (_organizationId: string, _financeUserId: string, id: string) => id === 'missing' ? ({ ok: false as const, reason: 'RETURN_NOT_PENDING' }) : ({ ok: true as const, salesReturn: { id } }) };
+    const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'FINANCE' as const } }) };
+    const managerAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'MANAGER' as const } }) };
+    const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, approvals);
+    const manager = await buildApp(successIdentity, managerAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, approvals);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, approvals);
+
+    expect((await anonymous.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/approve` })).statusCode).toBe(401);
+    expect((await manager.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/approve`, headers: { cookie: 'session=token' } })).statusCode).toBe(403);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/returns/missing/approve', headers: { cookie: 'session=token' } })).statusCode).toBe(409);
+    expect((await finance.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/approve`, headers: { cookie: 'session=token' } })).json()).toEqual({ id: returnId });
+    await Promise.all([finance.close(), manager.close(), anonymous.close()]);
+  });
 });
