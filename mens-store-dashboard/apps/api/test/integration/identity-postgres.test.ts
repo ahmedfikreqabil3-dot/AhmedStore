@@ -53,7 +53,8 @@ const categoryService = createCategoryService({
 const productService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'SKU_EXISTS' as const }) };
 const warehouseService = { list: async () => [], create: async () => ({ ok: false as const, reason: 'WAREHOUSE_EXISTS' as const }) };
 const stockService = { quantityAsOf: async () => '0.0000' };
-const app = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService);
+const inventoryMovementService = { post: async () => ({ ok: false as const, reason: 'PRODUCT_UNAVAILABLE' as const }) };
+const app = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });

@@ -17,7 +17,7 @@
 | Identity | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /users` | Public only for login; user administration otherwise. |
 | Catalogue | `GET/POST/PATCH /products`, `GET /categories` | Read product or manage catalogue. |
 | Parties | `GET/POST/PATCH /customers`, `GET/POST/PATCH /suppliers` | Read/manage respective party. |
-| Inventory | `POST /stock-adjustments`, `POST /stock-transfers`, `GET /inventory` | Inventory posting permission. |
+| Inventory | `POST /inventory/movements`, `POST /stock-transfers`, `GET /inventory/stock` | Inventory posting permission. `POST /inventory/movements` currently permits only immutable opening-balance and adjustment movements and requires `Idempotency-Key`. |
 | Commerce | `POST /sales`, `GET /sales/:id`, `POST /returns` | Sell/return permission plus warehouse scope. |
 | Finance | `POST /expenses`, `POST /customer-payments`, `GET /treasuries` | Finance permission. |
 | Reporting | `GET /reports/sales`, `GET /reports/inventory` | Report-read permission. |

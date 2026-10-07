@@ -49,3 +49,26 @@ export const stockQuerySchema = z.object({
   asOf: z.coerce.date()
 });
 export type StockQuery = z.infer<typeof stockQuerySchema>;
+
+export const inventoryMovementTypeSchema = z.enum(['OPENING_BALANCE', 'ADJUSTMENT']);
+export type InventoryMovementType = z.infer<typeof inventoryMovementTypeSchema>;
+
+export const signedDecimalStringSchema = z.string().regex(/^-?\d{1,15}(\.\d{1,4})?$/).refine((value) => !/^-?0(?:\.0{1,4})?$/.test(value));
+
+export const createInventoryMovementSchema = z.object({
+  productId: z.string().uuid(),
+  warehouseId: z.string().uuid(),
+  type: inventoryMovementTypeSchema,
+  quantity: signedDecimalStringSchema,
+  referenceType: z.string().trim().min(2).max(80),
+  referenceId: z.string().trim().min(1).max(120),
+  occurredAt: z.coerce.date()
+});
+export type CreateInventoryMovementInput = z.infer<typeof createInventoryMovementSchema>;
+
+export const inventoryMovementSchema = createInventoryMovementSchema.extend({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  idempotencyKey: z.string().min(1).nullable()
+});
+export type InventoryMovement = z.infer<typeof inventoryMovementSchema>;

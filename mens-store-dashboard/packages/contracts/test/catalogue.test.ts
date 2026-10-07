@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCategorySchema, createProductSchema, createWarehouseSchema, stockQuerySchema } from '../src/catalogue.js';
+import { createCategorySchema, createInventoryMovementSchema, createProductSchema, createWarehouseSchema, stockQuerySchema } from '../src/catalogue.js';
 
 describe('catalogue contracts', () => {
   it('trims valid category names', () => {
@@ -26,5 +26,11 @@ describe('catalogue contracts', () => {
   it('accepts a product, optional warehouse, and historical stock boundary', () => {
     expect(stockQuerySchema.parse({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', asOf: '2026-01-01T00:00:00.000Z' })).toMatchObject({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f' });
     expect(stockQuerySchema.safeParse({ productId: 'not-a-uuid', asOf: 'bad-date' }).success).toBe(false);
+  });
+
+  it('accepts signed nonzero stock movements and rejects zero quantities', () => {
+    const movement = { productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', warehouseId: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', type: 'ADJUSTMENT', quantity: '-2.0000', referenceType: 'COUNT', referenceId: 'count-1', occurredAt: '2026-01-01T00:00:00.000Z' };
+    expect(createInventoryMovementSchema.parse(movement)).toMatchObject({ quantity: '-2.0000' });
+    expect(createInventoryMovementSchema.safeParse({ ...movement, quantity: '-0.0000' }).success).toBe(false);
   });
 });

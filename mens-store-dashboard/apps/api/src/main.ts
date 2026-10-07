@@ -6,6 +6,7 @@ import { createCategoryService } from './modules/catalogue/category.js';
 import { createProductService } from './modules/catalogue/product.js';
 import { createWarehouseService } from './modules/catalogue/warehouse.js';
 import { createStockService } from './modules/inventory/stock.js';
+import { createInventoryMovementService } from './modules/inventory/movement.js';
 
 const prisma = new PrismaClient();
 const identityService = createIdentityService({
@@ -98,4 +99,25 @@ const stockService = createStockService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService);
+const inventoryMovementService = createInventoryMovementService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const movement = await prisma.inventoryTransaction.findFirst({ where: { organizationId, idempotencyKey } });
+    return movement && { ...movement, type: movement.type as 'OPENING_BALANCE' | 'ADJUSTMENT', quantity: movement.quantity.toFixed(4) };
+  },
+  async findProduct(id, organizationId) {
+    const product = await prisma.product.findFirst({ where: { id, organizationId } });
+    return product && { ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) };
+  },
+  async findWarehouse(id, organizationId) {
+    return prisma.warehouse.findFirst({ where: { id, organizationId } });
+  },
+  async post({ actorUserId, ...movement }) {
+    return prisma.$transaction(async (transaction) => {
+      const created = await transaction.inventoryTransaction.create({ data: movement });
+      await transaction.auditEvent.create({ data: { organizationId: movement.organizationId, actorUserId, action: 'INVENTORY_MOVEMENT_POSTED', entityType: 'InventoryTransaction', entityId: created.id } });
+      return { ...created, type: created.type as 'OPENING_BALANCE' | 'ADJUSTMENT', quantity: created.quantity.toFixed(4) };
+    });
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService);
