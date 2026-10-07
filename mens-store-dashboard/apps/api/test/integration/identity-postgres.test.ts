@@ -6,6 +6,7 @@ import { createIdentityService } from '../../src/modules/identity/service.js';
 import { createSessionService } from '../../src/modules/identity/session.js';
 import { hashPassword } from '../../src/modules/identity/password.js';
 import { createCategoryService } from '../../src/modules/catalogue/category.js';
+import { createSalesService } from '../../src/modules/sales/service.js';
 
 const prisma = new PrismaClient();
 let organizationId = '';
@@ -57,6 +58,36 @@ const inventoryMovementService = { post: async () => ({ ok: false as const, reas
 const customerService = { list: async () => [], create: async () => ({ ok: true as const, customer: { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', organizationId: '', legacyId: null, name: 'Mohamed Ali', phone: null, email: null, address: null, notes: null, creditLimit: '0.0000', active: true, version: 1 } }) };
 const salesService = { post: async () => ({ ok: false as const, reason: 'INSUFFICIENT_STOCK' }) };
 const app = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService);
+const realSalesService = createSalesService({
+  async findByIdempotencyKey(currentOrganizationId, idempotencyKey) {
+    const sale = await prisma.sale.findFirst({ where: { organizationId: currentOrganizationId, idempotencyKey } });
+    return sale && { id: sale.id, organizationId: sale.organizationId, customerId: sale.customerId, warehouseId: sale.warehouseId, subtotal: sale.subtotal.toFixed(4), discount: sale.discount.toFixed(4), total: sale.total.toFixed(4), occurredAt: sale.occurredAt };
+  },
+  async findCustomer(id, currentOrganizationId) {
+    const customer = await prisma.customer.findFirst({ where: { id, organizationId: currentOrganizationId } });
+    return customer && { ...customer, creditLimit: customer.creditLimit.toFixed(4) };
+  },
+  async findWarehouse(id, currentOrganizationId) {
+    return prisma.warehouse.findFirst({ where: { id, organizationId: currentOrganizationId } });
+  },
+  async findProducts(ids, currentOrganizationId) {
+    const products = await prisma.product.findMany({ where: { id: { in: ids }, organizationId: currentOrganizationId } });
+    return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) }));
+  },
+  async post(command) {
+    return prisma.$transaction(async (transaction) => {
+      for (const line of command.input.lines) {
+        const balance = await transaction.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, occurredAt: { lte: command.input.occurredAt } } });
+        if ((balance._sum.quantity ?? new Prisma.Decimal(0)).lessThan(new Prisma.Decimal(line.quantity))) return { ok: false as const, reason: 'INSUFFICIENT_STOCK' as const };
+      }
+      const sale = await transaction.sale.create({ data: { id: command.id, organizationId: command.organizationId, customerId: command.input.customerId, warehouseId: command.input.warehouseId, actorUserId: command.actorUserId, idempotencyKey: command.idempotencyKey, subtotal: command.calculated.subtotal, discount: command.calculated.discount, total: command.calculated.total, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line, index) => ({ id: randomUUID(), lineNumber: index + 1, productId: line.productId, productName: command.products.get(line.productId)!.name, sku: command.products.get(line.productId)!.sku, quantity: line.quantity, unitPrice: line.unitPrice, discount: line.discount, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: randomUUID(), method: payment.method, amount: payment.amount })) } } });
+      await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: randomUUID(), organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, type: 'SALE_ISSUE', quantity: new Prisma.Decimal(line.quantity).negated(), referenceType: 'Sale', referenceId: sale.id, occurredAt: command.input.occurredAt })) });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALE_POSTED', entityType: 'Sale', entityId: sale.id } });
+      return { ok: true as const, sale: { id: sale.id, organizationId: sale.organizationId, customerId: sale.customerId, warehouseId: sale.warehouseId, subtotal: sale.subtotal.toFixed(4), discount: sale.discount.toFixed(4), total: sale.total.toFixed(4), occurredAt: sale.occurredAt } };
+    });
+  }
+});
+const salesApp = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, realSalesService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });
@@ -64,6 +95,7 @@ beforeAll(async () => {
   const otherOrganization = await prisma.organization.create({ data: { name: 'Other Integration Store' } });
   otherOrganizationId = otherOrganization.id;
   await app.ready();
+  await salesApp.ready();
 });
 
 afterEach(async () => {
@@ -83,6 +115,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await app.close();
+  await salesApp.close();
   await prisma.organization.delete({ where: { id: organizationId } });
   await prisma.organization.delete({ where: { id: otherOrganizationId } });
   await prisma.$disconnect();
@@ -154,5 +187,33 @@ describe('identity registration against PostgreSQL', () => {
     const current = await prisma.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId, warehouseId: warehouse.id, productId: product.id } });
     expect(historical._sum.quantity?.toFixed(4)).toBe('10.0000');
     expect(current._sum.quantity?.toFixed(4)).toBe('7.0000');
+  });
+
+  it('posts an atomic sale, replays idempotently, and leaves no partial records when stock is insufficient', async () => {
+    const administrator = { organizationId, name: 'Sales Admin', email: `sales-${randomUUID()}@example.test`, password: 'SecurePassword123!', role: 'ADMIN' as const };
+    const user = await prisma.user.create({ data: { organizationId, name: administrator.name, email: administrator.email, passwordHash: await hashPassword(administrator.password), role: administrator.role } });
+    const customer = await prisma.customer.create({ data: { organizationId, name: 'POS Customer', creditLimit: new Prisma.Decimal('1000.0000') } });
+    const warehouse = await prisma.warehouse.create({ data: { organizationId, name: 'Sales Warehouse' } });
+    const product = await prisma.product.create({ data: { organizationId, name: 'Sales Product', sku: `SALES-${randomUUID()}`, salePrice: new Prisma.Decimal('10.0000'), costPrice: new Prisma.Decimal('5.0000') } });
+    const occurredAt = '2026-01-01T00:00:00.000Z';
+    await prisma.inventoryTransaction.create({ data: { organizationId, warehouseId: warehouse.id, productId: product.id, type: 'OPENING_BALANCE', quantity: new Prisma.Decimal('5.0000'), referenceType: 'OPENING', referenceId: product.id, occurredAt: new Date(occurredAt) } });
+    const login = await salesApp.inject({ method: 'POST', url: '/api/v1/auth/login', payload: administrator });
+    const cookie = String(login.headers['set-cookie']).split(';')[0];
+    const body = { customerId: customer.id, warehouseId: warehouse.id, lines: [{ productId: product.id, quantity: '2.0000', unitPrice: '10.0000', discount: '1.0000' }], payments: [{ method: 'CASH', amount: '19.0000' }], occurredAt };
+
+    const created = await salesApp.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie, 'idempotency-key': 'sale-1' }, payload: body });
+    expect(created.statusCode).toBe(201);
+    const saleId = created.json().id;
+    expect(await prisma.sale.findUnique({ where: { id: saleId }, include: { lines: true, payments: true } })).toMatchObject({ total: new Prisma.Decimal('19.0000'), lines: [{ quantity: new Prisma.Decimal('2.0000'), total: new Prisma.Decimal('19.0000') }], payments: [{ method: 'CASH', amount: new Prisma.Decimal('19.0000') }] });
+    const balance = await prisma.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId, warehouseId: warehouse.id, productId: product.id } });
+    expect(balance._sum.quantity?.toFixed(4)).toBe('3.0000');
+    expect(await prisma.auditEvent.findFirst({ where: { organizationId, action: 'SALE_POSTED', entityId: saleId } })).toMatchObject({ actorUserId: user.id });
+
+    expect((await salesApp.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie, 'idempotency-key': 'sale-1' }, payload: body })).statusCode).toBe(200);
+    expect(await prisma.sale.count({ where: { organizationId } })).toBe(1);
+    const rejected = await salesApp.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie, 'idempotency-key': 'sale-2' }, payload: { ...body, lines: [{ ...body.lines[0], quantity: '4.0000', discount: '0.0000' }], payments: [{ method: 'CASH', amount: '40.0000' }] } });
+    expect(rejected.statusCode).toBe(409);
+    expect(await prisma.sale.count({ where: { organizationId } })).toBe(1);
+    expect(await prisma.inventoryTransaction.count({ where: { organizationId, productId: product.id } })).toBe(2);
   });
 });
