@@ -269,4 +269,26 @@ describe('API health endpoint', () => {
     expect((await cashier.inject({ method: 'POST', url: '/api/v1/returns', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
     await Promise.all([cashier.close(), anonymous.close(), warehouse.close()]);
   });
+
+  it('submits a no-invoice return only for a manager or admin and keeps it pending', async () => {
+    const customerId = 'f710274a-4b51-49bd-a31f-d6a8ab81b01a';
+    const warehouseId = 'a0ac2c74-c66c-4a28-b658-34c88db36e8a';
+    const productId = '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f';
+    const body = { customerId, warehouseId, lines: [{ productId, quantity: '1.0000', unitPrice: '10.0000' }], payments: [{ method: 'CASH', amount: '10.0000' }], reason: 'No receipt', itemCondition: 'Unworn', occurredAt: '2026-01-01T00:00:00.000Z' };
+    const pending = { submit: async (_organizationId: string, _actorUserId: string, key: string) => key === 'product' ? ({ ok: false as const, reason: 'PRODUCT_UNAVAILABLE' }) : ({ ok: true as const, salesReturn: { id: '9f112860-9eb3-402f-b722-740616412a85' }, replayed: key === 'replay' }) };
+    const managerAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'MANAGER' as const } }) };
+    const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'FINANCE' as const } }) };
+    const manager = await buildApp(successIdentity, managerAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, pending);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, pending);
+    const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, pending);
+
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', payload: body })).statusCode).toBe(401);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(403);
+    expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(400);
+    expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: {} })).statusCode).toBe(400);
+    expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'product' }, payload: body })).statusCode).toBe(409);
+    expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(201);
+    expect((await manager.inject({ method: 'POST', url: '/api/v1/returns/no-invoice', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
+    await Promise.all([manager.close(), anonymous.close(), finance.close()]);
+  });
 });

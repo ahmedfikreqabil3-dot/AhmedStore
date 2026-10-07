@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createProductSchema, createSaleSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateProductInput, type CreateSaleInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createSaleSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreateSaleInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -50,6 +50,10 @@ export interface InvoiceReturnService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 
+export interface NoInvoiceReturnService {
+  submit(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateNoInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -59,7 +63,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -226,6 +230,19 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const parsed = createInvoiceReturnSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_RETURN' });
     const result = await invoiceReturnService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(result.replayed ? 200 : 201).send(result.salesReturn);
+  });
+
+  app.post('/api/v1/returns/no-invoice', { schema: { summary: 'Submit a manager-valued no-invoice return for Finance approval', tags: ['Sales'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'returns:submit_no_invoice')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const idempotencyKey = request.headers['idempotency-key'];
+    if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return reply.code(400).send({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    const parsed = createNoInvoiceReturnSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_NO_INVOICE_RETURN' });
+    const result = await noInvoiceReturnService!.submit(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.salesReturn);
   });

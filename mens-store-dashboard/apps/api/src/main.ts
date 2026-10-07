@@ -10,6 +10,7 @@ import { createInventoryMovementService } from './modules/inventory/movement.js'
 import { createCustomerService } from './modules/parties/customer.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
+import { createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -226,4 +227,26 @@ const invoiceReturnService = createInvoiceReturnService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService);
+const noInvoiceReturnService = createNoInvoiceReturnService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const salesReturn = await prisma.salesReturn.findFirst({ where: { organizationId, idempotencyKey, status: 'PENDING_APPROVAL' } });
+    return salesReturn && { id: salesReturn.id, organizationId: salesReturn.organizationId, total: salesReturn.total.toFixed(4), status: 'PENDING_APPROVAL' as const };
+  },
+  async findCustomer(id, organizationId) {
+    const customer = await prisma.customer.findFirst({ where: { id, organizationId } });
+    return customer && { ...customer, creditLimit: customer.creditLimit.toFixed(4) };
+  },
+  async findWarehouse(id, organizationId) {
+    return prisma.warehouse.findFirst({ where: { id, organizationId } });
+  },
+  async findProducts(ids, organizationId) {
+    const products = await prisma.product.findMany({ where: { id: { in: ids }, organizationId } });
+    return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) }));
+  },
+  async createPending(command) {
+    const salesReturn = await prisma.salesReturn.create({ data: { id: command.id, organizationId: command.organizationId, customerId: command.input.customerId, warehouseId: command.input.warehouseId, actorUserId: command.actorUserId, reason: `${command.input.reason}\nCondition: ${command.input.itemCondition}`, total: command.total, status: 'PENDING_APPROVAL', idempotencyKey: command.idempotencyKey, occurredAt: command.input.occurredAt, lines: { create: command.input.lines.map((line) => ({ id: crypto.randomUUID(), productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, total: new Prisma.Decimal(line.quantity).mul(line.unitPrice).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP) })) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
+    return { id: salesReturn.id, organizationId: salesReturn.organizationId, total: salesReturn.total.toFixed(4), status: 'PENDING_APPROVAL' as const };
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService);
