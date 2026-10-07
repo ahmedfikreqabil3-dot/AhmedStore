@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createNoInvoiceReturnService, type NoInvoiceReturnsRepository } from '../../../src/modules/sales/no-invoice-return-service.js';
+import { createNoInvoiceApprovalService, createNoInvoiceReturnService, type NoInvoiceReturnsRepository } from '../../../src/modules/sales/no-invoice-return-service.js';
 
 const organizationId = '38e7c8c5-ec67-4fa4-b4b8-7d2156be5d55';
 const actorUserId = '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f';
@@ -39,5 +39,13 @@ describe('no-invoice return service', () => {
     const service = createNoInvoiceReturnService(repository({ createPending: async (received) => { command = received; return pending; } }));
     await expect(service.submit(organizationId, actorUserId, 'key-1', input)).resolves.toEqual({ ok: true, salesReturn: pending, replayed: false });
     expect(command).toMatchObject({ id: expect.any(String), organizationId, actorUserId, idempotencyKey: 'key-1', total: '20.0000', input });
+  });
+
+  it('approves only an existing pending request with the finance actor', async () => {
+    await expect(createNoInvoiceApprovalService({ findPending: async () => null, approve: async () => { throw new Error('must not approve'); } }).approve(organizationId, actorUserId, pending.id)).resolves.toEqual({ ok: false, reason: 'RETURN_NOT_PENDING' });
+    let command: unknown;
+    const service = createNoInvoiceApprovalService({ findPending: async () => pending, approve: async (received) => { command = received; return { id: pending.id, total: pending.total }; } });
+    await expect(service.approve(organizationId, actorUserId, pending.id)).resolves.toEqual({ ok: true, salesReturn: { id: pending.id, total: pending.total } });
+    expect(command).toEqual({ id: pending.id, organizationId, financeUserId: actorUserId });
   });
 });
