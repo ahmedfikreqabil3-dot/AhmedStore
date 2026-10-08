@@ -185,6 +185,7 @@ const salesService = createSalesService({
         }
       });
       await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, type: 'SALE_ISSUE', quantity: new Prisma.Decimal(line.quantity).negated(), referenceType: 'Sale', referenceId: sale.id, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'SALE_RECEIPT', paymentMethod: payment.method, amount: payment.amount, sourceType: 'Sale', sourceId: sale.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
       await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALE_POSTED', entityType: 'Sale', entityId: sale.id } });
       return { ok: true as const, sale: toPostedSale(sale) };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -221,6 +222,7 @@ const invoiceReturnService = createInvoiceReturnService({
       if (!paid.equals(total)) return { ok: false as const, reason: 'PAYMENT_TOTAL_MISMATCH' as const };
       const salesReturn = await transaction.salesReturn.create({ data: { id: command.id, organizationId: command.organizationId, saleId: command.sale.id, customerId: command.sale.customerId, warehouseId: command.sale.warehouseId, actorUserId: command.actorUserId, reason: command.input.reason, total, status: 'POSTED', idempotencyKey: command.idempotencyKey, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), saleLineId: line.saleLineId, productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
       await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.sale.warehouseId, productId: line.productId, type: 'SALE_RETURN', quantity: line.quantity, referenceType: 'SalesReturn', referenceId: salesReturn.id, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'RETURN_REFUND', paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: salesReturn.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
       await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALES_RETURN_POSTED', entityType: 'SalesReturn', entityId: salesReturn.id } });
       return { ok: true as const, salesReturn: { id: salesReturn.id, saleId: salesReturn.saleId!, total: salesReturn.total.toFixed(4) } };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -260,10 +262,11 @@ const noInvoiceApprovalService = createNoInvoiceApprovalService({
   },
   async approve({ id, organizationId, financeUserId }) {
     return prisma.$transaction(async (transaction) => {
-      const pending = await transaction.salesReturn.findFirst({ where: { id, organizationId, saleId: null, status: 'PENDING_APPROVAL' }, include: { lines: true } });
+      const pending = await transaction.salesReturn.findFirst({ where: { id, organizationId, saleId: null, status: 'PENDING_APPROVAL' }, include: { lines: true, payments: true } });
       if (!pending) return { ok: false as const, reason: 'RETURN_NOT_PENDING' as const };
       const salesReturn = await transaction.salesReturn.update({ where: { id: pending.id }, data: { status: 'POSTED', approvedByUserId: financeUserId } });
       await transaction.inventoryTransaction.createMany({ data: pending.lines.map((line) => ({ id: crypto.randomUUID(), organizationId, warehouseId: pending.warehouseId, productId: line.productId, type: 'SALE_RETURN', quantity: line.quantity, referenceType: 'SalesReturn', referenceId: pending.id, occurredAt: pending.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: pending.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId, type: 'RETURN_REFUND', paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: pending.id, actorUserId: financeUserId, occurredAt: pending.occurredAt })) });
       await transaction.auditEvent.create({ data: { organizationId, actorUserId: financeUserId, action: 'NO_INVOICE_RETURN_APPROVED', entityType: 'SalesReturn', entityId: pending.id } });
       return { ok: true as const, salesReturn: { id: salesReturn.id, total: salesReturn.total.toFixed(4) } };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

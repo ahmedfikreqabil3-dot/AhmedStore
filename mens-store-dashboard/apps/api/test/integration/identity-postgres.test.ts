@@ -82,6 +82,7 @@ const realSalesService = createSalesService({
       }
       const sale = await transaction.sale.create({ data: { id: command.id, organizationId: command.organizationId, customerId: command.input.customerId, warehouseId: command.input.warehouseId, actorUserId: command.actorUserId, idempotencyKey: command.idempotencyKey, subtotal: command.calculated.subtotal, discount: command.calculated.discount, total: command.calculated.total, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line, index) => ({ id: randomUUID(), lineNumber: index + 1, productId: line.productId, productName: command.products.get(line.productId)!.name, sku: command.products.get(line.productId)!.sku, quantity: line.quantity, unitPrice: line.unitPrice, discount: line.discount, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: randomUUID(), method: payment.method, amount: payment.amount })) } } });
       await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: randomUUID(), organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, type: 'SALE_ISSUE', quantity: new Prisma.Decimal(line.quantity).negated(), referenceType: 'Sale', referenceId: sale.id, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: randomUUID(), organizationId: command.organizationId, type: 'SALE_RECEIPT', paymentMethod: payment.method, amount: payment.amount, sourceType: 'Sale', sourceId: sale.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
       await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALE_POSTED', entityType: 'Sale', entityId: sale.id } });
       return { ok: true as const, sale: { id: sale.id, organizationId: sale.organizationId, customerId: sale.customerId, warehouseId: sale.warehouseId, subtotal: sale.subtotal.toFixed(4), discount: sale.discount.toFixed(4), total: sale.total.toFixed(4), occurredAt: sale.occurredAt } };
     });
@@ -101,6 +102,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { organizationId } });
+  await prisma.treasuryTransaction.deleteMany({ where: { organizationId } });
   await prisma.inventoryTransaction.deleteMany({ where: { organizationId } });
   await prisma.returnPayment.deleteMany({ where: { salesReturn: { organizationId } } });
   await prisma.returnLine.deleteMany({ where: { salesReturn: { organizationId } } });
@@ -211,9 +213,11 @@ describe('identity registration against PostgreSQL', () => {
     const balance = await prisma.inventoryTransaction.aggregate({ _sum: { quantity: true }, where: { organizationId, warehouseId: warehouse.id, productId: product.id } });
     expect(balance._sum.quantity?.toFixed(4)).toBe('3.0000');
     expect(await prisma.auditEvent.findFirst({ where: { organizationId, action: 'SALE_POSTED', entityId: saleId } })).toMatchObject({ actorUserId: user.id });
+    expect(await prisma.treasuryTransaction.findMany({ where: { organizationId, sourceId: saleId } })).toMatchObject([{ type: 'SALE_RECEIPT', paymentMethod: 'CASH', amount: new Prisma.Decimal('19.0000'), actorUserId: user.id }]);
 
     expect((await salesApp.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie, 'idempotency-key': 'sale-1' }, payload: body })).statusCode).toBe(200);
     expect(await prisma.sale.count({ where: { organizationId } })).toBe(1);
+    expect(await prisma.treasuryTransaction.count({ where: { organizationId, sourceId: saleId } })).toBe(1);
     const rejected = await salesApp.inject({ method: 'POST', url: '/api/v1/sales', headers: { cookie, 'idempotency-key': 'sale-2' }, payload: { ...body, lines: [{ ...body.lines[0], quantity: '4.0000', discount: '0.0000' }], payments: [{ method: 'CASH', amount: '40.0000' }] } });
     expect(rejected.statusCode).toBe(409);
     expect(await prisma.sale.count({ where: { organizationId } })).toBe(1);

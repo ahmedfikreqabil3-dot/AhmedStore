@@ -22,6 +22,7 @@ model Organization {
   sales Sale[]
   salesReturns SalesReturn[]
   inventoryTransactions InventoryTransaction[]
+  treasuryTransactions TreasuryTransaction[]
 }
 
 enum Role {
@@ -61,6 +62,11 @@ enum ReturnStatus {
   PENDING_APPROVAL
   POSTED
   VOIDED
+}
+
+enum TreasuryTransactionType {
+  SALE_RECEIPT
+  RETURN_REFUND
 }
 
 model User {
@@ -297,6 +303,23 @@ model ReturnPayment {
   createdAt      DateTime      @default(now())
 
   @@index([salesReturnId, method])
+}
+
+model TreasuryTransaction {
+  id             String                  @id @default(uuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  type           TreasuryTransactionType
+  paymentMethod  PaymentMethod
+  amount         Decimal                 @db.Decimal(19, 4)
+  sourceType     String
+  sourceId       String
+  actorUserId    String
+  occurredAt     DateTime
+  createdAt      DateTime                @default(now())
+
+  @@index([organizationId, occurredAt, paymentMethod])
+  @@index([organizationId, sourceType, sourceId])
 }
 
 model InventoryTransaction {
