@@ -252,10 +252,12 @@ const returnRevisionService = createReturnRevisionService({
     return prisma.$transaction(async (transaction) => {
       const original = await transaction.salesReturn.findFirst({ where: { id: command.original.id, organizationId: command.organizationId, status: 'POSTED' }, include: { lines: true, payments: true } });
       if (!original) return { ok: false as const, reason: 'RETURN_NOT_POSTED' as const };
-      for (const line of command.input.lines) {
-        const returned = await transaction.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId: line.saleLineId, salesReturn: { organizationId: command.organizationId, status: 'POSTED', id: { not: original.id } } } });
-        const saleLine = command.sale.lines.find((candidate) => candidate.id === line.saleLineId)!;
-        if (new Prisma.Decimal(line.quantity).plus(returned._sum.quantity ?? 0).greaterThan(new Prisma.Decimal(saleLine.quantity))) return { ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' as const };
+      const requestedBySaleLine = new Map<string, Prisma.Decimal>();
+      for (const line of command.input.lines) requestedBySaleLine.set(line.saleLineId, requestedBySaleLine.get(line.saleLineId)?.plus(line.quantity) ?? new Prisma.Decimal(line.quantity));
+      for (const [saleLineId, requested] of requestedBySaleLine) {
+        const returned = await transaction.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId, salesReturn: { organizationId: command.organizationId, status: 'POSTED', id: { not: original.id } } } });
+        const saleLine = command.sale.lines.find((candidate) => candidate.id === saleLineId)!;
+        if (requested.plus(returned._sum.quantity ?? 0).greaterThan(new Prisma.Decimal(saleLine.quantity))) return { ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' as const };
       }
       const paid = command.input.payments.reduce((sum, payment) => sum.plus(payment.amount), new Prisma.Decimal(0));
       if (!paid.equals(new Prisma.Decimal(command.calculated.total))) return { ok: false as const, reason: 'PAYMENT_TOTAL_MISMATCH' as const };
