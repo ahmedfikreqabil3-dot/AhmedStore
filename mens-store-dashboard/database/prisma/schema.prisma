@@ -67,6 +67,7 @@ enum ReturnStatus {
 enum TreasuryTransactionType {
   SALE_RECEIPT
   RETURN_REFUND
+  RETURN_REFUND_REVERSAL
 }
 
 model User {
@@ -263,6 +264,9 @@ model SalesReturn {
   warehouse      Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   actorUserId    String
   approvedByUserId String?
+  replacesReturnId String?
+  replacesReturn SalesReturn? @relation("ReturnRevision", fields: [replacesReturnId], references: [id], onDelete: Restrict)
+  revisedBy     SalesReturn[] @relation("ReturnRevision")
   reason         String
   total          Decimal      @db.Decimal(19, 4)
   status         ReturnStatus @default(POSTED)
@@ -276,6 +280,7 @@ model SalesReturn {
   @@index([organizationId, saleId, occurredAt])
   @@index([organizationId, status, occurredAt])
   @@index([organizationId, warehouseId, occurredAt])
+  @@index([organizationId, replacesReturnId])
 }
 
 model ReturnLine {

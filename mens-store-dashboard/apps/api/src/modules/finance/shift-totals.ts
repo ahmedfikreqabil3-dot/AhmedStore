@@ -1,6 +1,6 @@
 import type { PaymentMethod } from '@ahmed-store/contracts';
 
-export type TreasuryEntry = { type: 'SALE_RECEIPT' | 'RETURN_REFUND'; paymentMethod: PaymentMethod; amount: string };
+export type TreasuryEntry = { type: 'SALE_RECEIPT' | 'RETURN_REFUND' | 'RETURN_REFUND_REVERSAL'; paymentMethod: PaymentMethod; amount: string };
 export type ShiftMethodTotal = { method: PaymentMethod; receipts: string; refunds: string; net: string };
 export type ShiftTotals = { receipts: string; refunds: string; net: string; methods: ShiftMethodTotal[] };
 
@@ -19,8 +19,8 @@ export function calculateShiftTotals(entries: TreasuryEntry[]): ShiftTotals {
   const byMethod = new Map<PaymentMethod, { receipts: bigint; refunds: bigint }>();
   for (const entry of entries) {
     const current = byMethod.get(entry.paymentMethod) ?? { receipts: 0n, refunds: 0n };
-    if (entry.type === 'SALE_RECEIPT') current.receipts += toUnits(entry.amount);
-    else current.refunds += toUnits(entry.amount);
+    if (entry.type === 'RETURN_REFUND') current.refunds += toUnits(entry.amount);
+    else current.receipts += toUnits(entry.amount);
     byMethod.set(entry.paymentMethod, current);
   }
   const methods = [...byMethod.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([method, totals]) => ({ method, receipts: fromUnits(totals.receipts), refunds: fromUnits(totals.refunds), net: fromUnits(totals.receipts - totals.refunds) }));

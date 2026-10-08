@@ -288,6 +288,28 @@ describe('API health endpoint', () => {
     await Promise.all([cashier.close(), anonymous.close(), warehouse.close()]);
   });
 
+  it('revises a posted invoice return only for sales roles with idempotency', async () => {
+    const returnId = '9f112860-9eb3-402f-b722-740616412a85';
+    const saleId = 'f710274a-4b51-49bd-a31f-d6a8ab81b01a';
+    const saleLineId = 'a0ac2c74-c66c-4a28-b658-34c88db36e8a';
+    const body = { saleId, lines: [{ saleLineId, quantity: '1.0000' }], payments: [{ method: 'CASH', amount: '10.0000' }], reason: 'Changed size', occurredAt: '2026-01-01T00:00:00.000Z' };
+    const revisions = { revise: async (_organizationId: string, _actorUserId: string, _returnId: string, key: string) => key === 'missing' ? ({ ok: false as const, reason: 'RETURN_NOT_POSTED' }) : ({ ok: true as const, salesReturn: { id: returnId }, replayed: key === 'replay' }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const warehouseAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'WAREHOUSE' as const } }) };
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, revisions);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, revisions);
+    const warehouse = await buildApp(successIdentity, warehouseAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, revisions);
+    const url = `/api/v1/returns/${returnId}/revise`;
+    expect((await anonymous.inject({ method: 'POST', url, payload: body })).statusCode).toBe(401);
+    expect((await warehouse.inject({ method: 'POST', url, headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(403);
+    expect((await cashier.inject({ method: 'POST', url, headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url, headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: {} })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url, headers: { cookie: 'session=token', 'idempotency-key': 'missing' }, payload: body })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url, headers: { cookie: 'session=token', 'idempotency-key': 'key-1' }, payload: body })).statusCode).toBe(201);
+    expect((await cashier.inject({ method: 'POST', url, headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
+    await Promise.all([cashier.close(), anonymous.close(), warehouse.close()]);
+  });
+
   it('submits a no-invoice return only for a manager or admin and keeps it pending', async () => {
     const customerId = 'f710274a-4b51-49bd-a31f-d6a8ab81b01a';
     const warehouseId = 'a0ac2c74-c66c-4a28-b658-34c88db36e8a';

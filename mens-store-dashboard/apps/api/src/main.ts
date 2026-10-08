@@ -10,6 +10,7 @@ import { createInventoryMovementService } from './modules/inventory/movement.js'
 import { createCustomerService } from './modules/parties/customer.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
+import { createReturnRevisionService } from './modules/sales/return-revision-service.js';
 import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
 import { createShiftTotalsService } from './modules/finance/shift-totals.js';
 
@@ -230,6 +231,44 @@ const invoiceReturnService = createInvoiceReturnService({
   }
 });
 
+const returnRevisionService = createReturnRevisionService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const salesReturn = await prisma.salesReturn.findFirst({ where: { organizationId, idempotencyKey, replacesReturnId: { not: null } } });
+    return salesReturn && { id: salesReturn.id, saleId: salesReturn.saleId!, total: salesReturn.total.toFixed(4) };
+  },
+  async findPosted(id, organizationId) {
+    const salesReturn = await prisma.salesReturn.findFirst({ where: { id, organizationId, saleId: { not: null }, status: 'POSTED' }, include: { lines: true } });
+    return salesReturn && { id: salesReturn.id, saleId: salesReturn.saleId!, lines: salesReturn.lines.map((line) => ({ saleLineId: line.saleLineId!, quantity: line.quantity.toFixed(4) })) };
+  },
+  async findSale(id, organizationId) {
+    const sale = await prisma.sale.findFirst({ where: { id, organizationId, status: 'POSTED' }, include: { lines: true } });
+    return sale && { id: sale.id, customerId: sale.customerId, warehouseId: sale.warehouseId, lines: sale.lines.map((line) => ({ id: line.id, productId: line.productId, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), total: line.total.toFixed(4) })) };
+  },
+  async returnedQuantity(saleLineId, organizationId, excludingReturnId) {
+    const quantity = await prisma.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId, salesReturn: { organizationId, status: 'POSTED', id: { not: excludingReturnId } } } });
+    return (quantity._sum.quantity ?? new Prisma.Decimal(0)).toFixed(4);
+  },
+  async revise(command) {
+    return prisma.$transaction(async (transaction) => {
+      const original = await transaction.salesReturn.findFirst({ where: { id: command.original.id, organizationId: command.organizationId, status: 'POSTED' }, include: { lines: true, payments: true } });
+      if (!original) return { ok: false as const, reason: 'RETURN_NOT_POSTED' as const };
+      for (const line of command.input.lines) {
+        const returned = await transaction.returnLine.aggregate({ _sum: { quantity: true }, where: { saleLineId: line.saleLineId, salesReturn: { organizationId: command.organizationId, status: 'POSTED', id: { not: original.id } } } });
+        const saleLine = command.sale.lines.find((candidate) => candidate.id === line.saleLineId)!;
+        if (new Prisma.Decimal(line.quantity).plus(returned._sum.quantity ?? 0).greaterThan(new Prisma.Decimal(saleLine.quantity))) return { ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' as const };
+      }
+      const paid = command.input.payments.reduce((sum, payment) => sum.plus(payment.amount), new Prisma.Decimal(0));
+      if (!paid.equals(new Prisma.Decimal(command.calculated.total))) return { ok: false as const, reason: 'PAYMENT_TOTAL_MISMATCH' as const };
+      await transaction.salesReturn.update({ where: { id: original.id }, data: { status: 'VOIDED' } });
+      const replacement = await transaction.salesReturn.create({ data: { id: command.id, organizationId: command.organizationId, saleId: command.sale.id, customerId: command.sale.customerId, warehouseId: command.sale.warehouseId, actorUserId: command.actorUserId, replacesReturnId: original.id, reason: command.input.reason, total: command.calculated.total, status: 'POSTED', idempotencyKey: command.idempotencyKey, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), saleLineId: line.saleLineId, productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
+      await transaction.inventoryTransaction.createMany({ data: [...original.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: original.warehouseId, productId: line.productId, type: 'REVERSAL' as const, quantity: line.quantity.negated(), referenceType: 'SalesReturn', referenceId: original.id, occurredAt: command.input.occurredAt })), ...command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.sale.warehouseId, productId: line.productId, type: 'SALE_RETURN' as const, quantity: line.quantity, referenceType: 'SalesReturn', referenceId: replacement.id, occurredAt: command.input.occurredAt }))] });
+      await transaction.treasuryTransaction.createMany({ data: [...original.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'RETURN_REFUND_REVERSAL' as const, paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: original.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })), ...command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'RETURN_REFUND' as const, paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: replacement.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt }))] });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALES_RETURN_REVISED', entityType: 'SalesReturn', entityId: original.id } });
+      return { ok: true as const, salesReturn: { id: replacement.id, saleId: replacement.saleId!, total: replacement.total.toFixed(4) } };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+});
+
 const noInvoiceReturnService = createNoInvoiceReturnService({
   async findByIdempotencyKey(organizationId, idempotencyKey) {
     const salesReturn = await prisma.salesReturn.findFirst({ where: { organizationId, idempotencyKey, status: 'PENDING_APPROVAL' } });
@@ -281,4 +320,4 @@ const shiftTotalsService = createShiftTotalsService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService);
