@@ -23,6 +23,7 @@ model Organization {
   salesReturns SalesReturn[]
   inventoryTransactions InventoryTransaction[]
   treasuryTransactions TreasuryTransaction[]
+  expenses Expense[]
   shifts Shift[]
 }
 
@@ -69,6 +70,7 @@ enum TreasuryTransactionType {
   SALE_RECEIPT
   RETURN_REFUND
   RETURN_REFUND_REVERSAL
+  EXPENSE_PAYMENT
 }
 
 enum ShiftStatus {
@@ -332,6 +334,23 @@ model TreasuryTransaction {
 
   @@index([organizationId, occurredAt, paymentMethod])
   @@index([organizationId, sourceType, sourceId])
+}
+
+model Expense {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category       String
+  description    String
+  paymentMethod  PaymentMethod
+  amount         Decimal  @db.Decimal(19, 4)
+  actorUserId    String
+  idempotencyKey String
+  occurredAt     DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, occurredAt])
 }
 
 model Shift {
