@@ -59,6 +59,10 @@ export interface NoInvoiceApprovalService {
   approve(organizationId: string, financeUserId: string, returnId: string): Promise<{ ok: true; salesReturn: { id: string } } | { ok: false; reason: string }>;
 }
 
+export interface ShiftTotalsService {
+  summarize(organizationId: string, openedAt: Date, closedAt: Date): Promise<{ ok: true; totals: { receipts: string; refunds: string; net: string; methods: Array<{ method: string; receipts: string; refunds: string; net: string }> } } | { ok: false; reason: 'INVALID_SHIFT_PERIOD' }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -68,7 +72,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -194,6 +198,19 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await inventoryMovementService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.movement);
+  });
+
+  app.get('/api/v1/finance/shift-totals', { schema: { summary: 'Calculate shift totals from posted treasury movements', tags: ['Finance'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'treasury:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const query = request.query as { openedAt?: string; closedAt?: string };
+    const openedAt = new Date(query.openedAt ?? '');
+    const closedAt = new Date(query.closedAt ?? '');
+    if (Number.isNaN(openedAt.getTime()) || Number.isNaN(closedAt.getTime())) return reply.code(400).send({ error: 'INVALID_SHIFT_PERIOD' });
+    const result = await shiftTotalsService!.summarize(authenticated.user.organizationId, openedAt, closedAt);
+    if (!result.ok) return reply.code(400).send({ error: result.reason });
+    return result.totals;
   });
 
   app.get('/api/v1/customers', { schema: { summary: 'List active organization customers', tags: ['Customers'] } }, async (request, reply) => {

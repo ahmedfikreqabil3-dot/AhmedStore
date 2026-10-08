@@ -207,6 +207,24 @@ describe('API health endpoint', () => {
     await Promise.all([admin.close(), anonymous.close(), cashier.close()]);
   });
 
+  it('calculates shift totals only for Finance or Admin from a valid period', async () => {
+    const totals = { receipts: '100.0000', refunds: '20.0000', net: '80.0000', methods: [{ method: 'CASH', receipts: '100.0000', refunds: '20.0000', net: '80.0000' }] };
+    const shiftTotals = { summarize: async (_organizationId: string, openedAt: Date, closedAt: Date) => closedAt <= openedAt ? ({ ok: false as const, reason: 'INVALID_SHIFT_PERIOD' as const }) : ({ ok: true as const, totals }) };
+    const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'FINANCE' as const } }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, shiftTotals);
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, shiftTotals);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, shiftTotals);
+    const period = 'openedAt=2026-01-01T00%3A00%3A00.000Z&closedAt=2026-01-01T08%3A00%3A00.000Z';
+
+    expect((await anonymous.inject({ method: 'GET', url: `/api/v1/finance/shift-totals?${period}` })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'GET', url: `/api/v1/finance/shift-totals?${period}`, headers: { cookie: 'session=token' } })).statusCode).toBe(403);
+    expect((await finance.inject({ method: 'GET', url: '/api/v1/finance/shift-totals', headers: { cookie: 'session=token' } })).statusCode).toBe(400);
+    expect((await finance.inject({ method: 'GET', url: '/api/v1/finance/shift-totals?openedAt=2026-01-01T08%3A00%3A00.000Z&closedAt=2026-01-01T08%3A00%3A00.000Z', headers: { cookie: 'session=token' } })).statusCode).toBe(400);
+    expect((await finance.inject({ method: 'GET', url: `/api/v1/finance/shift-totals?${period}`, headers: { cookie: 'session=token' } })).json()).toEqual(totals);
+    await Promise.all([finance.close(), cashier.close(), anonymous.close()]);
+  });
+
   it('lists and creates tenant-scoped customers for sales roles', async () => {
     const customer = { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', organizationId: input.organizationId, legacyId: null, name: 'Mohamed Ali', phone: '01012345678', email: 'mohamed@example.test', address: 'Cairo', notes: 'VIP', creditLimit: '5000.0000', active: true, version: 1 };
     const customers = { list: async () => [customer], create: async () => ({ ok: true as const, customer }) };

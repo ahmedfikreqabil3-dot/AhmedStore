@@ -11,6 +11,7 @@ import { createCustomerService } from './modules/parties/customer.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
 import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
+import { createShiftTotalsService } from './modules/finance/shift-totals.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -273,4 +274,11 @@ const noInvoiceApprovalService = createNoInvoiceApprovalService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService);
+const shiftTotalsService = createShiftTotalsService({
+  async listEntries(organizationId, openedAt, closedAt) {
+    const entries = await prisma.treasuryTransaction.findMany({ where: { organizationId, occurredAt: { gte: openedAt, lt: closedAt } }, orderBy: { occurredAt: 'asc' } });
+    return entries.map((entry) => ({ type: entry.type, paymentMethod: entry.paymentMethod, amount: entry.amount.toFixed(4) }));
+  }
+});
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService);
