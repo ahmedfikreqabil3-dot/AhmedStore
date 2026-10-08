@@ -23,6 +23,7 @@ model Organization {
   salesReturns SalesReturn[]
   inventoryTransactions InventoryTransaction[]
   treasuryTransactions TreasuryTransaction[]
+  shifts Shift[]
 }
 
 enum Role {
@@ -68,6 +69,11 @@ enum TreasuryTransactionType {
   SALE_RECEIPT
   RETURN_REFUND
   RETURN_REFUND_REVERSAL
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
 }
 
 model User {
@@ -325,6 +331,21 @@ model TreasuryTransaction {
 
   @@index([organizationId, occurredAt, paymentMethod])
   @@index([organizationId, sourceType, sourceId])
+}
+
+model Shift {
+  id             String      @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String
+  status         ShiftStatus @default(OPEN)
+  openedAt       DateTime
+  closedAt       DateTime?
+  closedByUserId String?
+  createdAt      DateTime    @default(now())
+
+  @@index([organizationId, userId, status])
+  @@index([organizationId, openedAt])
 }
 
 model InventoryTransaction {
