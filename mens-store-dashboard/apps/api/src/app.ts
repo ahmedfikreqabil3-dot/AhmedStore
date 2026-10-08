@@ -63,6 +63,17 @@ export interface ShiftTotalsService {
   summarize(organizationId: string, openedAt: Date, closedAt: Date): Promise<{ ok: true; totals: { receipts: string; refunds: string; net: string; methods: Array<{ method: string; receipts: string; refunds: string; net: string }> } } | { ok: false; reason: 'INVALID_SHIFT_PERIOD' }>;
 }
 
+export interface ShiftService {
+  open(organizationId: string, userId: string, openedAt: Date): Promise<{ ok: true; shift: ShiftResponse } | { ok: false; reason: 'SHIFT_ALREADY_OPEN' }>;
+  current(organizationId: string, userId: string): Promise<ShiftResponse | null>;
+  close(organizationId: string, userId: string, shiftId: string, closedAt: Date): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_OWNED' | 'SHIFT_NOT_OPEN' }>;
+  review(organizationId: string, reviewerUserId: string, shiftId: string, reviewedAt: Date): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_CLOSED' }>;
+  summary(organizationId: string, requesterUserId: string, canReview: boolean, shiftId: string, now: Date): Promise<{ ok: true; shift: ShiftResponse; totals: { receipts: string; refunds: string; net: string; methods: Array<{ method: string; receipts: string; refunds: string; net: string }> } } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'INVALID_SHIFT_PERIOD' | 'FORBIDDEN' }>;
+  listClosed(organizationId: string): Promise<ShiftResponse[]>;
+}
+
+export type ShiftResponse = { id: string; organizationId: string; userId: string; status: 'OPEN' | 'CLOSED' | 'REVIEWED'; openedAt: Date; closedAt: Date | null; closedByUserId: string | null; reviewedAt: Date | null; reviewedByUserId: string | null };
+
 export interface ReturnRevisionService {
   revise(organizationId: string, actorUserId: string, returnId: string, idempotencyKey: string, input: CreateInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
@@ -76,7 +87,7 @@ function sessionCookie(token: string, expired = false) {
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -215,6 +226,58 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await shiftTotalsService!.summarize(authenticated.user.organizationId, openedAt, closedAt);
     if (!result.ok) return reply.code(400).send({ error: result.reason });
     return result.totals;
+  });
+
+  app.post('/api/v1/shifts/open', { schema: { summary: 'Open the authenticated user’s cash shift', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'shifts:manage_own')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const result = await shiftService!.open(authenticated.user.organizationId, authenticated.user.id, new Date());
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(201).send(result.shift);
+  });
+
+  app.get('/api/v1/shifts/current', { schema: { summary: 'Get the authenticated user’s open shift', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'shifts:manage_own')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { shift: await shiftService!.current(authenticated.user.organizationId, authenticated.user.id) };
+  });
+
+  app.post('/api/v1/shifts/:shiftId/close', { schema: { summary: 'Close the authenticated user’s open shift', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'shifts:manage_own')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const { shiftId } = request.params as { shiftId: string };
+    const result = await shiftService!.close(authenticated.user.organizationId, authenticated.user.id, shiftId, new Date());
+    if (!result.ok) return reply.code(result.reason === 'SHIFT_NOT_FOUND' ? 404 : 409).send({ error: result.reason });
+    return result.shift;
+  });
+
+  app.get('/api/v1/shifts/:shiftId/summary', { schema: { summary: 'Get a shift’s ledger-derived totals', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    const { shiftId } = request.params as { shiftId: string };
+    const result = await shiftService!.summary(authenticated.user.organizationId, authenticated.user.id, can(authenticated.user.role, 'shifts:review'), shiftId, new Date());
+    if (!result.ok) return reply.code(result.reason === 'SHIFT_NOT_FOUND' ? 404 : result.reason === 'FORBIDDEN' ? 403 : 409).send({ error: result.reason });
+    return { shift: result.shift, totals: result.totals };
+  });
+
+  app.get('/api/v1/shifts', { schema: { summary: 'List closed shifts awaiting or completing finance review', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'shifts:review')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    return { shifts: await shiftService!.listClosed(authenticated.user.organizationId) };
+  });
+
+  app.post('/api/v1/shifts/:shiftId/review', { schema: { summary: 'Mark a closed shift as reviewed by Finance or Admin', tags: ['Shifts'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'shifts:review')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const { shiftId } = request.params as { shiftId: string };
+    const result = await shiftService!.review(authenticated.user.organizationId, authenticated.user.id, shiftId, new Date());
+    if (!result.ok) return reply.code(result.reason === 'SHIFT_NOT_FOUND' ? 404 : 409).send({ error: result.reason });
+    return result.shift;
   });
 
   app.get('/api/v1/customers', { schema: { summary: 'List active organization customers', tags: ['Customers'] } }, async (request, reply) => {

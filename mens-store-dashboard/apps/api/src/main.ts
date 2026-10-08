@@ -13,6 +13,7 @@ import { createInvoiceReturnService } from './modules/sales/return-service.js';
 import { createReturnRevisionService } from './modules/sales/return-revision-service.js';
 import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
 import { createShiftTotalsService } from './modules/finance/shift-totals.js';
+import { createShiftService } from './modules/finance/shift-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -322,4 +323,28 @@ const shiftTotalsService = createShiftTotalsService({
   }
 });
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService);
+const shiftService = createShiftService({
+  async findOpen(organizationId, userId) {
+    const shift = await prisma.shift.findFirst({ where: { organizationId, userId, status: 'OPEN' } });
+    return shift;
+  },
+  async create(organizationId, userId, openedAt) {
+    return prisma.shift.create({ data: { organizationId, userId, openedAt } });
+  },
+  async findById(organizationId, shiftId) {
+    return prisma.shift.findFirst({ where: { id: shiftId, organizationId } });
+  },
+  async close(organizationId, shiftId, userId, closedAt) {
+    const updated = await prisma.shift.updateMany({ where: { id: shiftId, organizationId, userId, status: 'OPEN' }, data: { status: 'CLOSED', closedAt, closedByUserId: userId } });
+    return updated.count ? prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+  },
+  async review(organizationId, shiftId, reviewerUserId, reviewedAt) {
+    const updated = await prisma.shift.updateMany({ where: { id: shiftId, organizationId, status: 'CLOSED' }, data: { status: 'REVIEWED', reviewedAt, reviewedByUserId: reviewerUserId } });
+    return updated.count ? prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+  },
+  async listClosed(organizationId) {
+    return prisma.shift.findMany({ where: { organizationId, status: { in: ['CLOSED', 'REVIEWED'] } }, orderBy: { closedAt: 'desc' } });
+  }
+}, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
+
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService);

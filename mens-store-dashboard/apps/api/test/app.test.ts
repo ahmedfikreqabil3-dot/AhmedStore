@@ -225,6 +225,59 @@ describe('API health endpoint', () => {
     await Promise.all([finance.close(), cashier.close(), anonymous.close()]);
   });
 
+  it('lets a cashier own one shift while Finance reviews closed shifts and their ledger totals', async () => {
+    const openShift = { id: 'shift-1', organizationId: input.organizationId, userId: registeredUser.id, status: 'OPEN' as const, openedAt: new Date('2026-10-08T08:00:00.000Z'), closedAt: null, closedByUserId: null, reviewedAt: null, reviewedByUserId: null };
+    const closedShift = { ...openShift, status: 'CLOSED' as const, closedAt: new Date('2026-10-08T16:00:00.000Z'), closedByUserId: registeredUser.id };
+    const reviewedShift = { ...closedShift, status: 'REVIEWED' as const, reviewedAt: new Date('2026-10-08T16:01:00.000Z'), reviewedByUserId: 'finance-1' };
+    const jsonShift = <T extends typeof openShift | typeof closedShift | typeof reviewedShift>(shift: T) => ({ ...shift, openedAt: shift.openedAt.toISOString(), closedAt: shift.closedAt?.toISOString() ?? null, reviewedAt: shift.reviewedAt?.toISOString() ?? null });
+    let failOpen = false;
+    const shifts = {
+      open: async () => failOpen ? ({ ok: false as const, reason: 'SHIFT_ALREADY_OPEN' as const }) : ({ ok: true as const, shift: openShift }),
+      current: async () => openShift,
+      close: async (_org: string, _user: string, id: string) => id === 'missing' ? ({ ok: false as const, reason: 'SHIFT_NOT_FOUND' as const }) : id === 'other' ? ({ ok: false as const, reason: 'SHIFT_NOT_OWNED' as const }) : id === 'closed' ? ({ ok: false as const, reason: 'SHIFT_NOT_OPEN' as const }) : ({ ok: true as const, shift: closedShift }),
+      review: async (_org: string, _user: string, id: string) => id === 'missing' ? ({ ok: false as const, reason: 'SHIFT_NOT_FOUND' as const }) : id === 'reviewed' ? ({ ok: false as const, reason: 'SHIFT_NOT_CLOSED' as const }) : ({ ok: true as const, shift: reviewedShift }),
+      summary: async (_org: string, _requester: string, canReview: boolean, id: string) => id === 'missing' ? ({ ok: false as const, reason: 'SHIFT_NOT_FOUND' as const }) : id === 'invalid' ? ({ ok: false as const, reason: 'INVALID_SHIFT_PERIOD' as const }) : id === 'foreign' && !canReview ? ({ ok: false as const, reason: 'FORBIDDEN' as const }) : ({ ok: true as const, shift: id === 'foreign' ? { ...closedShift, userId: 'another-cashier' } : closedShift, totals: { receipts: '100.0000', refunds: '20.0000', net: '80.0000', methods: [] } }),
+      listClosed: async () => [closedShift]
+    };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, id: 'finance-1', role: 'FINANCE' as const } }) };
+    const warehouseAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'WAREHOUSE' as const } }) };
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, shifts);
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, shifts);
+    const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, shifts);
+    const warehouse = await buildApp(successIdentity, warehouseAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, shifts);
+    const headers = { cookie: 'session=token' };
+
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/shifts/open' })).statusCode).toBe(401);
+    expect((await warehouse.inject({ method: 'POST', url: '/api/v1/shifts/open', headers })).statusCode).toBe(403);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/open', headers })).statusCode).toBe(201);
+    failOpen = true;
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/open', headers })).statusCode).toBe(409);
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/shifts/current' })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/current', headers })).json()).toEqual({ shift: jsonShift(openShift) });
+    expect((await warehouse.inject({ method: 'GET', url: '/api/v1/shifts/current', headers })).statusCode).toBe(403);
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close' })).statusCode).toBe(401);
+    expect((await warehouse.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers })).statusCode).toBe(403);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/missing/close', headers })).statusCode).toBe(404);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/other/close', headers })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/closed/close', headers })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers })).json()).toEqual(jsonShift(closedShift));
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/shift-1/summary', headers })).json()).toEqual({ shift: jsonShift(closedShift), totals: { receipts: '100.0000', refunds: '20.0000', net: '80.0000', methods: [] } });
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/missing/summary', headers })).statusCode).toBe(404);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/invalid/summary', headers })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/foreign/summary', headers })).statusCode).toBe(403);
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/shifts/shift-1/summary' })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts', headers })).statusCode).toBe(403);
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/shifts' })).statusCode).toBe(401);
+    expect((await finance.inject({ method: 'GET', url: '/api/v1/shifts', headers })).json()).toEqual({ shifts: [jsonShift(closedShift)] });
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/review', headers })).statusCode).toBe(403);
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/review' })).statusCode).toBe(401);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/shifts/missing/review', headers })).statusCode).toBe(404);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/shifts/reviewed/review', headers })).statusCode).toBe(409);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/review', headers })).json()).toEqual(jsonShift(reviewedShift));
+    await Promise.all([anonymous.close(), cashier.close(), finance.close(), warehouse.close()]);
+  });
+
   it('lists and creates tenant-scoped customers for sales roles', async () => {
     const customer = { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', organizationId: input.organizationId, legacyId: null, name: 'Mohamed Ali', phone: '01012345678', email: 'mohamed@example.test', address: 'Cairo', notes: 'VIP', creditLimit: '5000.0000', active: true, version: 1 };
     const customers = { list: async () => [customer], create: async () => ({ ok: true as const, customer }) };
