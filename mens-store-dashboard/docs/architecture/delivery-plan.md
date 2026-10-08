@@ -68,6 +68,13 @@ and tenant isolation server-side; all Phase 2 code has 100% coverage.
 
 ## Phase 3 — Transactional commerce backend
 
+**Status:** In progress. Catalogue, warehouses, immutable inventory movements,
+customers, idempotent sales, invoice returns, no-invoice returns with Finance
+approval, an immutable treasury ledger, shift-total calculation, and audited
+return revision/replacement are implemented and verified against PostgreSQL.
+Purchasing, expenses, full shift lifecycle, and end-to-end commerce
+reconciliation remain open.
+
 **Deliverables:** catalogue, warehouse, inventory ledger, customer ledger,
 sales, payments, returns, expense/treasury posting primitives, idempotency, and
 audit events.
