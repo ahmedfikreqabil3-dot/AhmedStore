@@ -323,27 +323,34 @@ const shiftTotalsService = createShiftTotalsService({
   }
 });
 
+function shiftRecord(shift: NonNullable<Awaited<ReturnType<typeof prisma.shift.findUnique>>>) {
+  return { ...shift, expectedCash: shift.expectedCash?.toFixed(4) ?? null, countedCash: shift.countedCash?.toFixed(4) ?? null, cashDifference: shift.cashDifference?.toFixed(4) ?? null };
+}
+
 const shiftService = createShiftService({
   async findOpen(organizationId, userId) {
     const shift = await prisma.shift.findFirst({ where: { organizationId, userId, status: 'OPEN' } });
-    return shift;
+    return shift && shiftRecord(shift);
   },
   async create(organizationId, userId, openedAt) {
-    return prisma.shift.create({ data: { organizationId, userId, openedAt } });
+    return shiftRecord(await prisma.shift.create({ data: { organizationId, userId, openedAt } }));
   },
   async findById(organizationId, shiftId) {
-    return prisma.shift.findFirst({ where: { id: shiftId, organizationId } });
+    const shift = await prisma.shift.findFirst({ where: { id: shiftId, organizationId } });
+    return shift && shiftRecord(shift);
   },
-  async close(organizationId, shiftId, userId, closedAt) {
-    const updated = await prisma.shift.updateMany({ where: { id: shiftId, organizationId, userId, status: 'OPEN' }, data: { status: 'CLOSED', closedAt, closedByUserId: userId } });
-    return updated.count ? prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+  async close(organizationId, shiftId, userId, closedAt, reconciliation) {
+    const updated = await prisma.shift.updateMany({ where: { id: shiftId, organizationId, userId, status: 'OPEN' }, data: { status: 'CLOSED', closedAt, closedByUserId: userId, ...reconciliation } });
+    const shift = updated.count ? await prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+    return shift && shiftRecord(shift);
   },
   async review(organizationId, shiftId, reviewerUserId, reviewedAt) {
     const updated = await prisma.shift.updateMany({ where: { id: shiftId, organizationId, status: 'CLOSED' }, data: { status: 'REVIEWED', reviewedAt, reviewedByUserId: reviewerUserId } });
-    return updated.count ? prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+    const shift = updated.count ? await prisma.shift.findUnique({ where: { id: shiftId } }) : null;
+    return shift && shiftRecord(shift);
   },
   async listClosed(organizationId) {
-    return prisma.shift.findMany({ where: { organizationId, status: { in: ['CLOSED', 'REVIEWED'] } }, orderBy: { closedAt: 'desc' } });
+    return (await prisma.shift.findMany({ where: { organizationId, status: { in: ['CLOSED', 'REVIEWED'] } }, orderBy: { closedAt: 'desc' } })).map(shiftRecord);
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 

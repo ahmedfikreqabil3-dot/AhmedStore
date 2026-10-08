@@ -226,7 +226,7 @@ describe('API health endpoint', () => {
   });
 
   it('lets a cashier own one shift while Finance reviews closed shifts and their ledger totals', async () => {
-    const openShift = { id: 'shift-1', organizationId: input.organizationId, userId: registeredUser.id, status: 'OPEN' as const, openedAt: new Date('2026-10-08T08:00:00.000Z'), closedAt: null, closedByUserId: null, reviewedAt: null, reviewedByUserId: null };
+    const openShift = { id: 'shift-1', organizationId: input.organizationId, userId: registeredUser.id, status: 'OPEN' as const, openedAt: new Date('2026-10-08T08:00:00.000Z'), closedAt: null, closedByUserId: null, expectedCash: null, countedCash: null, cashDifference: null, discrepancyReason: null, reviewedAt: null, reviewedByUserId: null };
     const closedShift = { ...openShift, status: 'CLOSED' as const, closedAt: new Date('2026-10-08T16:00:00.000Z'), closedByUserId: registeredUser.id };
     const reviewedShift = { ...closedShift, status: 'REVIEWED' as const, reviewedAt: new Date('2026-10-08T16:01:00.000Z'), reviewedByUserId: 'finance-1' };
     const jsonShift = <T extends typeof openShift | typeof closedShift | typeof reviewedShift>(shift: T) => ({ ...shift, openedAt: shift.openedAt.toISOString(), closedAt: shift.closedAt?.toISOString() ?? null, reviewedAt: shift.reviewedAt?.toISOString() ?? null });
@@ -258,10 +258,13 @@ describe('API health endpoint', () => {
     expect((await warehouse.inject({ method: 'GET', url: '/api/v1/shifts/current', headers })).statusCode).toBe(403);
     expect((await anonymous.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close' })).statusCode).toBe(401);
     expect((await warehouse.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers })).statusCode).toBe(403);
-    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/missing/close', headers })).statusCode).toBe(404);
-    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/other/close', headers })).statusCode).toBe(409);
-    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/closed/close', headers })).statusCode).toBe(409);
-    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers })).json()).toEqual(jsonShift(closedShift));
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers, payload: { countedCash: 'invalid' } })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers, payload: { countedCash: '1.0000', discrepancyReason: ' ' } })).statusCode).toBe(400);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/missing/close', headers, payload: { countedCash: '100.0000', discrepancyReason: 'Cash counted' } })).statusCode).toBe(404);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/other/close', headers, payload: { countedCash: '100.0000' } })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/closed/close', headers, payload: { countedCash: '100.0000' } })).statusCode).toBe(409);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/shifts/shift-1/close', headers, payload: { countedCash: '100.0000' } })).json()).toEqual(jsonShift(closedShift));
     expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/shift-1/summary', headers })).json()).toEqual({ shift: jsonShift(closedShift), totals: { receipts: '100.0000', refunds: '20.0000', net: '80.0000', methods: [] } });
     expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/missing/summary', headers })).statusCode).toBe(404);
     expect((await cashier.inject({ method: 'GET', url: '/api/v1/shifts/invalid/summary', headers })).statusCode).toBe(409);

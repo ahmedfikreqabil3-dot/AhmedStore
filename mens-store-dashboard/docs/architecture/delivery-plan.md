@@ -73,7 +73,7 @@ customers, idempotent sales, invoice returns, no-invoice returns with Finance
 approval, an immutable treasury ledger, cashier-owned shift open/close, finance
 review, shift-total calculation, and audited
 return revision/replacement are implemented and verified against PostgreSQL.
-Purchasing, expenses, counted-cash reconciliation, and end-to-end commerce
+Purchasing, expenses, and end-to-end commerce
 reconciliation remain open.
 
 **Deliverables:** catalogue, warehouse, inventory ledger, customer ledger,

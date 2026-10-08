@@ -66,13 +66,13 @@ export interface ShiftTotalsService {
 export interface ShiftService {
   open(organizationId: string, userId: string, openedAt: Date): Promise<{ ok: true; shift: ShiftResponse } | { ok: false; reason: 'SHIFT_ALREADY_OPEN' }>;
   current(organizationId: string, userId: string): Promise<ShiftResponse | null>;
-  close(organizationId: string, userId: string, shiftId: string, closedAt: Date): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_OWNED' | 'SHIFT_NOT_OPEN' }>;
+  close(organizationId: string, userId: string, shiftId: string, closedAt: Date, countedCash: string, discrepancyReason: string | null): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_OWNED' | 'SHIFT_NOT_OPEN' | 'INVALID_SHIFT_PERIOD' | 'CASH_DISCREPANCY_REASON_REQUIRED' }>;
   review(organizationId: string, reviewerUserId: string, shiftId: string, reviewedAt: Date): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_CLOSED' }>;
   summary(organizationId: string, requesterUserId: string, canReview: boolean, shiftId: string, now: Date): Promise<{ ok: true; shift: ShiftResponse; totals: { receipts: string; refunds: string; net: string; methods: Array<{ method: string; receipts: string; refunds: string; net: string }> } } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'INVALID_SHIFT_PERIOD' | 'FORBIDDEN' }>;
   listClosed(organizationId: string): Promise<ShiftResponse[]>;
 }
 
-export type ShiftResponse = { id: string; organizationId: string; userId: string; status: 'OPEN' | 'CLOSED' | 'REVIEWED'; openedAt: Date; closedAt: Date | null; closedByUserId: string | null; reviewedAt: Date | null; reviewedByUserId: string | null };
+export type ShiftResponse = { id: string; organizationId: string; userId: string; status: 'OPEN' | 'CLOSED' | 'REVIEWED'; openedAt: Date; closedAt: Date | null; closedByUserId: string | null; expectedCash: string | null; countedCash: string | null; cashDifference: string | null; discrepancyReason: string | null; reviewedAt: Date | null; reviewedByUserId: string | null };
 
 export interface ReturnRevisionService {
   revise(organizationId: string, actorUserId: string, returnId: string, idempotencyKey: string, input: CreateInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
@@ -85,6 +85,14 @@ function readSessionToken(cookie: string | undefined) {
 function sessionCookie(token: string, expired = false) {
   const age = expired ? 0 : 8 * 60 * 60;
   return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
+}
+
+function parseShiftClose(body: unknown) {
+  if (!body || typeof body !== 'object') return null;
+  const { countedCash, discrepancyReason } = body as { countedCash?: unknown; discrepancyReason?: unknown };
+  if (typeof countedCash !== 'string' || !/^\d+(?:\.\d{1,4})?$/.test(countedCash)) return null;
+  if (discrepancyReason !== undefined && (typeof discrepancyReason !== 'string' || !discrepancyReason.trim() || discrepancyReason.length > 1000)) return null;
+  return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
 export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService) {
@@ -248,8 +256,10 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
     if (!can(authenticated.user.role, 'shifts:manage_own')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = parseShiftClose(request.body);
+    if (!parsed) return reply.code(400).send({ error: 'INVALID_SHIFT_CLOSING' });
     const { shiftId } = request.params as { shiftId: string };
-    const result = await shiftService!.close(authenticated.user.organizationId, authenticated.user.id, shiftId, new Date());
+    const result = await shiftService!.close(authenticated.user.organizationId, authenticated.user.id, shiftId, new Date(), parsed.countedCash, parsed.discrepancyReason);
     if (!result.ok) return reply.code(result.reason === 'SHIFT_NOT_FOUND' ? 404 : 409).send({ error: result.reason });
     return result.shift;
   });
