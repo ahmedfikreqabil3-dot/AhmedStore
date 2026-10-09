@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadProductCatalogue, loadSalesHistory } from './App.js';
+import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoginPanel, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadProductCatalogue, loadSalesHistory, loginUser } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -14,6 +14,17 @@ describe('App', () => {
     expect(screen.getByText('إدارة المنتجات والمخزون')).toBeInTheDocument();
     expect(screen.getByText('جارٍ تحميل كتالوج المنتجات…')).toBeInTheDocument();
     expect(await screen.findByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
+  });
+
+  it('logs in through the secure session endpoint and reloads the app session', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => Promise.resolve({ ok: true, json: async () => url.includes('/auth/login') ? ({ user: { id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' } }) : url.includes('/products') ? ({ products: [] }) : url.includes('/categories') ? ({ categories: [] }) : url.includes('/warehouses') ? ({ warehouses: [] }) : ({ sales: [], total: 0 }) })); vi.stubGlobal('fetch', fetchMock);
+    await expect(loginUser('organization-1', 'ahmed@example.com', 'password')).resolves.toMatchObject({ name: 'أحمد', role: 'ADMIN' }); expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/login', expect.objectContaining({ method: 'POST', credentials: 'include' }));
+    render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={emptySales} />); fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'password' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' })); expect(await screen.findByText('مرحباً، أحمد')).toBeInTheDocument();
+  });
+
+  it('keeps login disabled until complete and explains rejected credentials', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 })); await expect(loginUser('organization-1', 'ahmed@example.com', 'bad')).rejects.toThrow('LOGIN_401');
+    render(<LoginPanel login={async () => { throw Error('bad'); }} onSuccess={() => undefined} />); expect(screen.getByRole('button', { name: 'تسجيل الدخول' })).toBeDisabled(); fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'bad' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تسجيل الدخول');
   });
 
   it('shows separate product details, barcode, category, pricing, and stock columns', () => {

@@ -4,6 +4,12 @@ These requirements are additional scope. Existing workflows stay available until
 their new React/API equivalent passes regression, reconciliation, and acceptance
 testing. No legacy screen is removed merely because a replacement is scaffolded.
 
+## Frontend session prerequisite
+
+The React shell includes an authenticated login form backed by the Fastify session
+endpoint. A successful login refreshes API-backed operational panels so catalogue,
+inventory, and reporting data are requested under the new secure browser session.
+
 | ID | Requirement | Planned phase | Acceptance criteria |
 | --- | --- | --- | --- |
 | ENH-01 | Close the payment window after a confirmed successful invoice. | Phase 4 POS | **Implemented component behavior:** the payment dialog closes only after its sale-posting command resolves and stays open with an accessible error on failure. Wiring the React shell to the authenticated sales API is the remaining integration step. |

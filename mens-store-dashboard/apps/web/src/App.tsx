@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+
+export type SignedInUser = { id: string; name: string; email: string; role: string };
+export async function loginUser(organizationId: string, email: string, password: string): Promise<SignedInUser> { const response = await fetch('/api/v1/auth/login', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ organizationId, email, password }) }); if (!response.ok) throw Error(`LOGIN_${response.status}`); return (await response.json() as { user: SignedInUser }).user; }
+export function LoginPanel({ login = loginUser, onSuccess }: { login?: (organizationId: string, email: string, password: string) => Promise<SignedInUser>; onSuccess: (user: SignedInUser) => void }) { const [organizationId, setOrganizationId] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(null); try { onSuccess(await login(organizationId, email, password)); } catch { setError('تعذر تسجيل الدخول. تحقق من بيانات الحساب.'); } finally { setBusy(false); } } return <form aria-label="تسجيل الدخول" onSubmit={submit}><label>معرّف المؤسسة<input aria-label="معرّف المؤسسة" value={organizationId} onChange={(event) => setOrganizationId(event.target.value)} /></label><label>البريد الإلكتروني<input aria-label="البريد الإلكتروني" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>كلمة المرور<input aria-label="كلمة المرور" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><button type="submit" disabled={!organizationId || !email || !password || busy}>{busy ? 'جارٍ تسجيل الدخول…' : 'تسجيل الدخول'}</button>{error && <p role="alert">{error}</p>}</form>; }
 
 export type ProductTableRow = {
   id: string;
@@ -144,8 +148,9 @@ export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id
   return <section aria-labelledby="purchase-scan-title"><h2 id="purchase-scan-title">مسح باركود المشتريات</h2><label>الباركود<input aria-label="باركود المشتريات" value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} /></label><button type="button" onClick={submit}>إضافة المنتج</button>{error && <p role="alert">{error}</p>}</section>;
 }
 
-export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx, categoryImport = categoryImportActions }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void>; categoryImport?: CategoryImportActions }) {
+export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx, categoryImport = categoryImportActions, login = loginUser }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void>; categoryImport?: CategoryImportActions; login?: (organizationId: string, email: string, password: string) => Promise<SignedInUser> }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [sessionVersion, setSessionVersion] = useState(0); const [user, setUser] = useState<SignedInUser | null>(null);
   const [sales, setSales] = useState<SalesHistoryRow[]>([]);
   const [salesLoading, setSalesLoading] = useState(true);
   const [salesError, setSalesError] = useState<string | null>(null);
@@ -154,18 +159,15 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
     setSalesLoading(true); setSalesError(null);
     void loadSales().then((page) => { if (active) setSales(page.sales); }).catch(() => { if (active) setSalesError('تعذر تحميل سجل المبيعات. سجّل الدخول ثم أعد المحاولة.'); }).finally(() => { if (active) setSalesLoading(false); });
     return () => { active = false; };
-  }, [loadSales]);
+  }, [loadSales, sessionVersion]);
   return (
     <main dir="rtl" lang="ar">
       <h1>أحمد ستور</h1>
       <p>إدارة المنتجات والمخزون</p>
+      {user ? <p role="status">مرحباً، {user.name}</p> : <LoginPanel login={login} onSuccess={(signedInUser) => { setUser(signedInUser); setSessionVersion((value) => value + 1); }} />}
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
-      <LoadedProductCatalogue />
-      <CategoryImportPanel actions={categoryImport} />
-      <HistoricalInventory />
-      {salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}
-      <PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} />
+      <div key={sessionVersion}><LoadedProductCatalogue /><CategoryImportPanel actions={categoryImport} /><HistoricalInventory />{salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}<PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} /></div>
     </main>
   );
 }
