@@ -28,3 +28,7 @@ export const createPurchaseSchema = z.object({
   occurredAt: z.coerce.date()
 });
 export type CreatePurchaseInput = z.infer<typeof createPurchaseSchema>;
+
+export const purchaseReturnLineInputSchema = z.object({ purchaseLineId: z.string().uuid(), quantity: positivePurchaseDecimalSchema });
+export const createPurchaseReturnSchema = z.object({ purchaseId: z.string().uuid(), lines: z.array(purchaseReturnLineInputSchema).min(1), reason: z.string().trim().min(3).max(500), occurredAt: z.coerce.date() });
+export type CreatePurchaseReturnInput = z.infer<typeof createPurchaseReturnSchema>;
