@@ -46,8 +46,11 @@ export type CreateWarehouseInput = z.infer<typeof createWarehouseSchema>;
 export const stockQuerySchema = z.object({
   productId: z.string().uuid(),
   warehouseId: z.string().uuid().optional(),
+  branchId: z.string().uuid().optional(),
   asOf: z.coerce.date()
-});
+}).superRefine((query, context) => {
+  if (query.warehouseId && query.branchId && query.warehouseId !== query.branchId) context.addIssue({ code: z.ZodIssueCode.custom, message: 'warehouseId and branchId must match.' });
+}).transform(({ branchId, ...query }) => ({ ...query, warehouseId: query.warehouseId ?? branchId }));
 export type StockQuery = z.infer<typeof stockQuerySchema>;
 
 export const inventoryMovementTypeSchema = z.enum(['OPENING_BALANCE', 'ADJUSTMENT']);

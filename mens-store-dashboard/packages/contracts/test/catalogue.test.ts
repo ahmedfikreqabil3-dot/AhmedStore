@@ -26,6 +26,8 @@ describe('catalogue contracts', () => {
   it('accepts a product, optional warehouse, and historical stock boundary', () => {
     expect(stockQuerySchema.parse({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', asOf: '2026-01-01T00:00:00.000Z' })).toMatchObject({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f' });
     expect(stockQuerySchema.safeParse({ productId: 'not-a-uuid', asOf: 'bad-date' }).success).toBe(false);
+    expect(stockQuerySchema.parse({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', branchId: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', asOf: '2026-01-01T00:00:00.000Z' }).warehouseId).toBe('f710274a-4b51-49bd-a31f-d6a8ab81b01a');
+    expect(stockQuerySchema.safeParse({ productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', warehouseId: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', branchId: 'a0ac2c74-c66c-4a28-b658-34c88db36e8a', asOf: '2026-01-01T00:00:00.000Z' }).success).toBe(false);
   });
 
   it('accepts signed nonzero stock movements and rejects zero quantities', () => {

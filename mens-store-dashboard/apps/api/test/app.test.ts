@@ -182,6 +182,8 @@ describe('API health endpoint', () => {
     expect((await admin.inject({ method: 'GET', url: '/api/v1/inventory/stock', headers: { cookie: 'session=token' } })).statusCode).toBe(400);
     expect((await admin.inject({ method: 'GET', url: `/api/v1/inventory/stock?${query}`, headers: { cookie: 'session=token' } })).json()).toEqual({ quantity: '7.2500' });
     expect(received).toEqual([input.organizationId, productId, new Date('2026-01-01T00:00:00.000Z'), warehouseId]);
+    expect((await admin.inject({ method: 'GET', url: `/api/v1/inventory/stock?productId=${productId}&branchId=${warehouseId}&asOf=2026-01-01T00:00:00.000Z`, headers: { cookie: 'session=token' } })).json()).toEqual({ quantity: '7.2500' });
+    expect(received).toEqual([input.organizationId, productId, new Date('2026-01-01T00:00:00.000Z'), warehouseId]);
     await Promise.all([admin.close(), anonymous.close(), cashier.close()]);
   });
 
