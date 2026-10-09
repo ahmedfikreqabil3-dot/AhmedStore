@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, CategoryImportPanel, HistoricalInventory, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadSalesHistory } from './App.js';
+import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadProductCatalogue, loadSalesHistory } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -12,7 +12,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'أحمد ستور' })).toBeInTheDocument();
     expect(screen.getByText('إدارة المنتجات والمخزون')).toBeInTheDocument();
-    expect(screen.getByText('لا توجد منتجات مطابقة للفلتر الحالي.')).toBeInTheDocument();
+    expect(screen.getByText('جارٍ تحميل كتالوج المنتجات…')).toBeInTheDocument();
     expect(await screen.findByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
   });
 
@@ -200,4 +200,18 @@ describe('App', () => {
   });
 
   it('does not update unmounted inventory options after a late load', async () => { let resolve!: (value: { products: []; branches: [] }) => void; const view = render(<HistoricalInventory loadOptions={() => new Promise((done) => { resolve = done; })} />); view.unmount(); resolve({ products: [], branches: [] }); await Promise.resolve(); });
+
+  it('loads products with their Settings category names into the catalogue table', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ products: [{ id: 'product-1', name: 'قميص', sku: 'SH-1', barcode: '123', categoryId: 'category-1', salePrice: '100.0000' }, { id: 'product-2', name: 'بدون فئة', sku: 'NO-1', barcode: null, categoryId: null, salePrice: '10.0000' }, { id: 'product-3', name: 'فئة مؤرشفة', sku: 'OLD-1', barcode: null, categoryId: 'missing-category', salePrice: '20.0000' }] }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ categories: [{ id: 'category-1', name: 'قمصان' }] }) }));
+    await expect(loadProductCatalogue()).resolves.toEqual([{ id: 'product-1', name: 'قميص', sku: 'SH-1', barcode: '123', category: 'قمصان', salePrice: '100.0000', stock: '—', warehouse: '—' }, { id: 'product-2', name: 'بدون فئة', sku: 'NO-1', barcode: null, category: null, salePrice: '10.0000', stock: '—', warehouse: '—' }, { id: 'product-3', name: 'فئة مؤرشفة', sku: 'OLD-1', barcode: null, category: 'غير مصنفة', salePrice: '20.0000', stock: '—', warehouse: '—' }]);
+  });
+
+  it('rejects unavailable product or category catalogue responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })); await expect(loadProductCatalogue()).rejects.toThrow('CATALOGUE_UNAVAILABLE'); await expect(loadProductCatalogue()).rejects.toThrow('CATALOGUE_UNAVAILABLE');
+  });
+
+  it('renders loaded catalogue records and safely handles failures or late loads', async () => {
+    const view = render(<LoadedProductCatalogue loadProducts={async () => [{ id: 'product-1', name: 'قميص', sku: 'SH-1', barcode: '123', category: 'قمصان', salePrice: '100.0000', stock: '—', warehouse: '—' }]} />); expect(await screen.findByText('قميص')).toBeInTheDocument(); view.rerender(<LoadedProductCatalogue loadProducts={async () => { throw Error('offline'); }} />); expect(await screen.findByText('تعذر تحميل كتالوج المنتجات.')).toBeInTheDocument();
+    let resolve!: (value: ProductTableRow[]) => void; const late = render(<LoadedProductCatalogue loadProducts={() => new Promise((done) => { resolve = done; })} />); late.unmount(); resolve([]); await Promise.resolve();
+  });
 });
