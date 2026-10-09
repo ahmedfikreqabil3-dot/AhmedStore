@@ -51,7 +51,9 @@ bounded (100-record) organization-scoped document list, and `GET
 /api/v1/purchases/:purchaseId` returns the persisted immutable line snapshots.
 Both endpoints require `purchases:manage`; missing documents return `404`; and
 the composition layer returns `503` if the read service is not configured. The
-next step is the React selector and status-aware return/revision editor.
+React selector now loads these real documents and immutable line snapshots, and
+does not permit selecting a voided purchase. The next step is the status-aware
+return/revision editor.
 
 ### 4B — purchase entry and revision
 
