@@ -22,6 +22,7 @@ import { createExpenseService } from './modules/finance/expense-service.js';
 import { createSalesExportService } from './modules/reporting/sales-export.js';
 import { createSalesHistoryService } from './modules/sales/history-service.js';
 import { createCategoryImportService } from './modules/catalogue/category-import.js';
+import { createProductImportService } from './modules/catalogue/product-import.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -98,6 +99,12 @@ const productService = createProductService({
     const created = await prisma.product.create({ data: product });
     return { ...created, salePrice: created.salePrice.toFixed(4), costPrice: created.costPrice.toFixed(4) };
   }
+});
+
+const productImportService = createProductImportService({
+  async findExisting(organizationId, skus, barcodes) { const products = await prisma.product.findMany({ where: { organizationId, OR: [{ sku: { in: skus } }, { barcode: { in: barcodes } }] }, select: { sku: true, barcode: true } }); return { skus: products.map((product) => product.sku), barcodes: products.flatMap((product) => product.barcode ? [product.barcode] : []) }; },
+  async findCategories(organizationId, names) { return prisma.category.findMany({ where: { organizationId, archivedAt: null, name: { in: names } }, select: { id: true, name: true } }); },
+  async createAtomically(organizationId, actorUserId, products) { await prisma.$transaction(async (transaction) => { await transaction.product.createMany({ data: products.map((product) => ({ ...product, organizationId, active: true, version: 1 })) }); await transaction.auditEvent.create({ data: { organizationId, actorUserId, action: 'PRODUCTS_IMPORTED', entityType: 'ProductImport', entityId: crypto.randomUUID() } }); }); }
 });
 
 const warehouseService = createWarehouseService({
@@ -507,4 +514,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService, salesHistoryService, categoryImportService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService, salesHistoryService, categoryImportService, productImportService);
