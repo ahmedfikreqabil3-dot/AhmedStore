@@ -72,6 +72,16 @@ export function SalePaymentDialog({ open, onConfirm, onSucceeded }: { open: bool
 
 export type SalesHistoryRow = { id: string; customer: string; total: string };
 
+export type SalesHistoryPage = { sales: SalesHistoryRow[]; total: number };
+export type LoadSalesHistory = () => Promise<SalesHistoryPage>;
+
+export async function loadSalesHistory(): Promise<SalesHistoryPage> {
+  const response = await fetch('/api/v1/sales?limit=50&offset=0', { credentials: 'include' });
+  if (!response.ok) throw Error(`SALES_HISTORY_${response.status}`);
+  const body = await response.json() as { sales: Array<{ id: string; customerName: string; total: string }>; total: number };
+  return { sales: body.sales.map((sale) => ({ id: sale.id, customer: sale.customerName, total: sale.total })), total: body.total };
+}
+
 export function SalesHistory({ sales }: { sales: SalesHistoryRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => { if (selectedId && !sales.some((sale) => sale.id === selectedId)) setSelectedId(null); }, [sales, selectedId]);
@@ -85,8 +95,17 @@ export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id
   return <section aria-labelledby="purchase-scan-title"><h2 id="purchase-scan-title">مسح باركود المشتريات</h2><label>الباركود<input aria-label="باركود المشتريات" value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} /></label><button type="button" onClick={submit}>إضافة المنتج</button>{error && <p role="alert">{error}</p>}</section>;
 }
 
-export function App({ postSale = async () => undefined }: { postSale?: () => Promise<void> }) {
+export function App({ postSale = async () => undefined, loadSales = loadSalesHistory }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [sales, setSales] = useState<SalesHistoryRow[]>([]);
+  const [salesLoading, setSalesLoading] = useState(true);
+  const [salesError, setSalesError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setSalesLoading(true); setSalesError(null);
+    void loadSales().then((page) => { if (active) setSales(page.sales); }).catch(() => { if (active) setSalesError('تعذر تحميل سجل المبيعات. سجّل الدخول ثم أعد المحاولة.'); }).finally(() => { if (active) setSalesLoading(false); });
+    return () => { active = false; };
+  }, [loadSales]);
   return (
     <main dir="rtl" lang="ar">
       <h1>أحمد ستور</h1>
@@ -94,7 +113,7 @@ export function App({ postSale = async () => undefined }: { postSale?: () => Pro
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
       <ProductCatalogue products={[]} />
-      <SalesHistory sales={[]} />
+      {salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <SalesHistory sales={sales} />}
       <PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} />
     </main>
   );

@@ -1,17 +1,19 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
-import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory } from './App.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, loadSalesHistory } from './App.js';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const emptySales = async () => ({ sales: [], total: 0 });
 
 describe('App', () => {
-  it('renders the Arabic product-management shell and an empty state', () => {
-    render(<App />);
+  it('renders the Arabic product-management shell and an empty state', async () => {
+    render(<App loadSales={emptySales} />);
 
     expect(screen.getByRole('heading', { name: 'أحمد ستور' })).toBeInTheDocument();
     expect(screen.getByText('إدارة المنتجات والمخزون')).toBeInTheDocument();
     expect(screen.getByText('لا توجد منتجات مطابقة للفلتر الحالي.')).toBeInTheDocument();
+    expect(await screen.findByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
   });
 
   it('shows separate product details, barcode, category, pricing, and stock columns', () => {
@@ -56,7 +58,7 @@ describe('App', () => {
 
   it('closes the payment dialog only after a confirmed sale is posted', async () => {
     const postSale = async () => undefined;
-    render(<App postSale={postSale} />);
+    render(<App postSale={postSale} loadSales={emptySales} />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
@@ -64,14 +66,14 @@ describe('App', () => {
   });
 
   it('supports the default POS posting callback for the shell preview', async () => {
-    render(<App />);
+    render(<App loadSales={emptySales} />);
     fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('keeps the payment dialog open and explains a failed posting attempt', async () => {
-    render(<App postSale={async () => { throw Error('offline'); }} />);
+    render(<App postSale={async () => { throw Error('offline'); }} loadSales={emptySales} />);
     fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('تعذر إتمام الفاتورة');
@@ -104,10 +106,35 @@ describe('App', () => {
   });
 
   it('keeps the catalogue shell scanner callback usable', () => {
-    render(<App />);
+    render(<App loadSales={emptySales} />);
     const input = screen.getByLabelText('باركود المشتريات');
     fireEvent.change(input, { target: { value: 'PREVIEW-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' }));
     expect(input).toHaveValue('');
+  });
+
+  it('loads real sales history through the authenticated browser API client', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sales: [{ id: 'sale-1', customerName: 'محمد', total: '100.0000' }], total: 1 }) });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(loadSalesHistory()).resolves.toEqual({ sales: [{ id: 'sale-1', customer: 'محمد', total: '100.0000' }], total: 1 });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/sales?limit=50&offset=0', { credentials: 'include' });
+  });
+
+  it('shows a clear error when the sales history cannot be loaded', async () => {
+    render(<App loadSales={async () => { throw Error('unauthorized'); }} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تحميل سجل المبيعات');
+  });
+
+  it('rejects an unsuccessful history HTTP response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    await expect(loadSalesHistory()).rejects.toThrow('SALES_HISTORY_401');
+  });
+
+  it('does not update an unmounted sales-history screen after a late response', async () => {
+    let resolve!: (value: { sales: []; total: number }) => void;
+    const view = render(<App loadSales={() => new Promise((done) => { resolve = done; })} />);
+    view.unmount();
+    resolve({ sales: [], total: 0 });
+    await Promise.resolve();
   });
 });
