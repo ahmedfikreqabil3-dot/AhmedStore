@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { App, ProductCatalogue, ProductTable, SalesHistory } from './App.js';
+import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory } from './App.js';
 
 afterEach(cleanup);
 
@@ -87,5 +87,27 @@ describe('App', () => {
     view.rerender(<SalesHistory sales={[]} />);
     await waitFor(() => expect(screen.queryByLabelText('تفاصيل الفاتورة')).not.toBeInTheDocument());
     expect(screen.getByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
+  });
+
+  it('adds a recognized purchase barcode and rejects an unknown scan', () => {
+    const added: string[] = [];
+    render(<PurchaseBarcodeEntry products={[{ id: 'product-1', barcode: '123456', name: 'قميص' }]} onAdd={(product) => added.push(product.id)} />);
+    const input = screen.getByLabelText('باركود المشتريات');
+    fireEvent.change(input, { target: { value: 'unknown' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('الباركود غير معروف');
+    expect(added).toEqual([]);
+    fireEvent.change(input, { target: { value: ' 123456 ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(added).toEqual(['product-1']);
+    expect(input).toHaveValue('');
+  });
+
+  it('keeps the catalogue shell scanner callback usable', () => {
+    render(<App />);
+    const input = screen.getByLabelText('باركود المشتريات');
+    fireEvent.change(input, { target: { value: 'PREVIEW-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' }));
+    expect(input).toHaveValue('');
   });
 });

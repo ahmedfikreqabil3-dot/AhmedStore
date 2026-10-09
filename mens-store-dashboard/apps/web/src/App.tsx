@@ -79,6 +79,12 @@ export function SalesHistory({ sales }: { sales: SalesHistoryRow[] }) {
   return <section aria-labelledby="sales-history-title"><h2 id="sales-history-title">سجل المبيعات</h2><ul>{sales.map((sale) => <li key={sale.id}>{sale.customer} — {sale.total} <button type="button" onClick={() => setSelectedId(sale.id)}>عرض التفاصيل</button></li>)}</ul>{selected ? <article aria-label="تفاصيل الفاتورة"><h3>تفاصيل الفاتورة</h3><p>{selected.customer}: {selected.total}</p></article> : <p role="status">اختر فاتورة لعرض تفاصيلها.</p>}</section>;
 }
 
+export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id: string; barcode: string | null; name: string }>; onAdd: (product: { id: string; barcode: string | null; name: string }) => void }) {
+  const [barcode, setBarcode] = useState(''); const [error, setError] = useState<string | null>(null);
+  function submit() { const product = products.find((candidate) => candidate.barcode === barcode.trim()); if (!product) { setError('الباركود غير معروف.'); return; } onAdd(product); setBarcode(''); setError(null); }
+  return <section aria-labelledby="purchase-scan-title"><h2 id="purchase-scan-title">مسح باركود المشتريات</h2><label>الباركود<input aria-label="باركود المشتريات" value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} /></label><button type="button" onClick={submit}>إضافة المنتج</button>{error && <p role="alert">{error}</p>}</section>;
+}
+
 export function App({ postSale = async () => undefined }: { postSale?: () => Promise<void> }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   return (
@@ -89,6 +95,7 @@ export function App({ postSale = async () => undefined }: { postSale?: () => Pro
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
       <ProductCatalogue products={[]} />
       <SalesHistory sales={[]} />
+      <PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} />
     </main>
   );
 }
