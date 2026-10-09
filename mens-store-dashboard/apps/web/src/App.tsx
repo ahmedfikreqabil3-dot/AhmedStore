@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 export type ProductTableRow = {
   id: string;
   name: string;
@@ -54,6 +56,15 @@ export function SalePaymentDialog({ open, onConfirm, onSucceeded }: { open: bool
   return <section role="dialog" aria-modal="true" aria-labelledby="payment-title"><h2 id="payment-title">تأكيد الدفع</h2><p>لن تُغلق نافذة الدفع إلا بعد حفظ الفاتورة بنجاح.</p>{error && <p role="alert">{error}</p>}<button type="button" onClick={confirm} disabled={submitting}>{submitting ? 'جارٍ الحفظ…' : 'تأكيد الدفع'}</button></section>;
 }
 
+export type SalesHistoryRow = { id: string; customer: string; total: string };
+
+export function SalesHistory({ sales }: { sales: SalesHistoryRow[] }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => { if (selectedId && !sales.some((sale) => sale.id === selectedId)) setSelectedId(null); }, [sales, selectedId]);
+  const selected = sales.find((sale) => sale.id === selectedId);
+  return <section aria-labelledby="sales-history-title"><h2 id="sales-history-title">سجل المبيعات</h2><ul>{sales.map((sale) => <li key={sale.id}>{sale.customer} — {sale.total} <button type="button" onClick={() => setSelectedId(sale.id)}>عرض التفاصيل</button></li>)}</ul>{selected ? <article aria-label="تفاصيل الفاتورة"><h3>تفاصيل الفاتورة</h3><p>{selected.customer}: {selected.total}</p></article> : <p role="status">اختر فاتورة لعرض تفاصيلها.</p>}</section>;
+}
+
 export function App({ postSale = async () => undefined }: { postSale?: () => Promise<void> }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   return (
@@ -63,7 +74,7 @@ export function App({ postSale = async () => undefined }: { postSale?: () => Pro
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
       <ProductTable products={[]} />
+      <SalesHistory sales={[]} />
     </main>
   );
 }
-import { useState } from 'react';

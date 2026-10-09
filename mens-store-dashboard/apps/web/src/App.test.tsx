@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { App, ProductTable } from './App.js';
+import { App, ProductTable, SalesHistory } from './App.js';
 
 afterEach(cleanup);
 
@@ -11,7 +11,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'أحمد ستور' })).toBeInTheDocument();
     expect(screen.getByText('إدارة المنتجات والمخزون')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('لا توجد منتجات');
+    expect(screen.getByText('لا توجد منتجات مطابقة للفلتر الحالي.')).toBeInTheDocument();
   });
 
   it('shows separate product details, barcode, category, pricing, and stock columns', () => {
@@ -52,5 +52,16 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('تعذر إتمام الفاتورة');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('opens sales details only explicitly and clears stale selection after a history refresh', async () => {
+    const first = [{ id: 'sale-1', customer: 'محمد علي', total: '100.0000' }];
+    const view = render(<SalesHistory sales={first} />);
+    expect(screen.queryByLabelText('تفاصيل الفاتورة')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'عرض التفاصيل' }));
+    expect(screen.getByLabelText('تفاصيل الفاتورة')).toHaveTextContent('محمد علي');
+    view.rerender(<SalesHistory sales={[]} />);
+    await waitFor(() => expect(screen.queryByLabelText('تفاصيل الفاتورة')).not.toBeInTheDocument());
+    expect(screen.getByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
   });
 });
