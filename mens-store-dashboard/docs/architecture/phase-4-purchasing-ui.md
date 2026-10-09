@@ -46,6 +46,13 @@ Acceptance criteria:
 Exit criteria: the React client can select a real posted purchase and line(s)
 without manually entering identifiers.
 
+**Implemented API foundation:** `GET /api/v1/purchases` returns a deterministic,
+bounded (100-record) organization-scoped document list, and `GET
+/api/v1/purchases/:purchaseId` returns the persisted immutable line snapshots.
+Both endpoints require `purchases:manage`; missing documents return `404`; and
+the composition layer returns `503` if the read service is not configured. The
+next step is the React selector and status-aware return/revision editor.
+
 ### 4B — purchase entry and revision
 
 Build a purchase editor that uses the real product scanner/catalogue, supplier

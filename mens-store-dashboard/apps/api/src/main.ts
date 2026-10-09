@@ -172,6 +172,14 @@ const purchaseService = createPurchaseService({
   async findWarehouse(id, organizationId) { return prisma.warehouse.findFirst({ where: { id, organizationId } }); },
   async findProducts(ids, organizationId) { const products = await prisma.product.findMany({ where: { id: { in: ids }, organizationId } }); return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) })); },
   async findProductsByBarcodes(barcodes, organizationId) { const products = await prisma.product.findMany({ where: { barcode: { in: barcodes }, organizationId } }); return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) })); },
+  async list(organizationId) {
+    const purchases = await prisma.purchase.findMany({ where: { organizationId }, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 100 });
+    return purchases.map((purchase) => ({ id: purchase.id, supplierId: purchase.supplierId, warehouseId: purchase.warehouseId, status: purchase.status, total: purchase.total.toFixed(4), occurredAt: purchase.occurredAt }));
+  },
+  async find(organizationId, purchaseId) {
+    const purchase = await prisma.purchase.findFirst({ where: { id: purchaseId, organizationId }, include: { lines: { orderBy: { lineNumber: 'asc' } } } });
+    return purchase && { id: purchase.id, supplierId: purchase.supplierId, warehouseId: purchase.warehouseId, status: purchase.status, total: purchase.total.toFixed(4), occurredAt: purchase.occurredAt, lines: purchase.lines.map((line) => ({ id: line.id, lineNumber: line.lineNumber, productId: line.productId, productName: line.productName, sku: line.sku, barcode: line.barcode, quantity: line.quantity.toFixed(4), unitCost: line.unitCost.toFixed(4), total: line.total.toFixed(4) })) };
+  },
   async post(command) {
     return prisma.$transaction(async (transaction) => {
       const purchase = await transaction.purchase.create({ data: { id: command.id, organizationId: command.organizationId, supplierId: command.input.supplierId, warehouseId: command.input.warehouseId, actorUserId: command.actorUserId, idempotencyKey: command.idempotencyKey, subtotal: command.calculated.subtotal, total: command.calculated.total, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line, index) => { const product = command.products.get(line.productId)!; return { id: crypto.randomUUID(), lineNumber: index + 1, productId: line.productId, productName: product.name, sku: product.sku, barcode: product.barcode, quantity: line.quantity, unitCost: line.unitCost, total: line.total }; }) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });

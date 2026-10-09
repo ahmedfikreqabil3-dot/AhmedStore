@@ -13,6 +13,8 @@ export interface PurchaseRepository {
   findProducts(ids: string[], organizationId: string): Promise<Product[]>;
   findProductsByBarcodes(barcodes: string[], organizationId: string): Promise<Product[]>;
   post(command: PostPurchaseCommand): Promise<PostedPurchase>;
+  list?(organizationId: string): Promise<Array<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date }>>;
+  find?(organizationId: string, purchaseId: string): Promise<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date; lines: Array<{ id: string; lineNumber: number; productId: string; productName: string; sku: string; barcode: string | null; quantity: string; unitCost: string; total: string }> } | null>;
 }
 
 export type PostPurchaseResult =
@@ -26,6 +28,8 @@ function paymentUnits(amount: string) {
 
 export function createPurchaseService(repository: PurchaseRepository) {
   return {
+    list: repository.list,
+    find: repository.find,
     async post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<PostPurchaseResult> {
       const existing = await repository.findByIdempotencyKey(organizationId, idempotencyKey);
       if (existing) return { ok: true, purchase: existing, replayed: true };

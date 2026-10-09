@@ -49,6 +49,8 @@ export interface SupplierService {
 }
 export interface PurchaseService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
+  list?(organizationId: string): Promise<Array<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date }>>;
+  find?(organizationId: string, purchaseId: string): Promise<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date; lines: Array<{ id: string; lineNumber: number; productId: string; productName: string; sku: string; barcode: string | null; quantity: string; unitCost: string; total: string }> } | null>;
 }
 export interface PurchaseReturnService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: ReturnType<typeof createPurchaseReturnSchema.parse>): Promise<{ ok: true; purchaseReturn: { id: string; purchaseId: string; total: string }; replayed: boolean } | { ok: false; reason: string }>;
@@ -396,6 +398,24 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await purchaseService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.purchase);
+  });
+
+  app.get('/api/v1/purchases', { schema: { summary: 'List organization purchase documents for revision or return selection', tags: ['Purchasing'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'purchases:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!purchaseService?.list) return reply.code(503).send({ error: 'PURCHASE_READ_UNAVAILABLE' });
+    return { purchases: await purchaseService.list(authenticated.user.organizationId) };
+  });
+
+  app.get('/api/v1/purchases/:purchaseId', { schema: { summary: 'Read one organization purchase and its immutable lines', tags: ['Purchasing'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'purchases:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!purchaseService?.find) return reply.code(503).send({ error: 'PURCHASE_READ_UNAVAILABLE' });
+    const { purchaseId } = request.params as { purchaseId: string };
+    const purchase = await purchaseService.find(authenticated.user.organizationId, purchaseId);
+    return purchase ? { purchase } : reply.code(404).send({ error: 'PURCHASE_NOT_FOUND' });
   });
 
   app.put('/api/v1/purchases/:purchaseId', { schema: { summary: 'Replace a posted purchase through compensating stock and financial entries', tags: ['Purchasing'] } }, async (request, reply) => {
