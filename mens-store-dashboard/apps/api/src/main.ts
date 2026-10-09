@@ -21,6 +21,7 @@ import { createShiftService } from './modules/finance/shift-service.js';
 import { createExpenseService } from './modules/finance/expense-service.js';
 import { createSalesExportService } from './modules/reporting/sales-export.js';
 import { createSalesHistoryService } from './modules/sales/history-service.js';
+import { createCategoryImportService } from './modules/catalogue/category-import.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -70,6 +71,11 @@ const categoryService = createCategoryService({
     const updated = await prisma.category.updateMany({ where: { id, organizationId, archivedAt: null }, data: { archivedAt } });
     return updated.count === 0 ? null : prisma.category.findUnique({ where: { id } });
   }
+});
+
+const categoryImportService = createCategoryImportService({
+  async findNames(organizationId, names) { const categories = await prisma.category.findMany({ where: { organizationId, name: { in: names } }, select: { name: true } }); return categories.map((category) => category.name); },
+  async createAtomically(organizationId, actorUserId, categories) { await prisma.$transaction(async (transaction) => { await transaction.category.createMany({ data: categories.map((category) => ({ ...category, organizationId })) }); await transaction.auditEvent.create({ data: { organizationId, actorUserId, action: 'CATEGORIES_IMPORTED', entityType: 'CategoryImport', entityId: crypto.randomUUID() } }); }); }
 });
 
 const productService = createProductService({
@@ -493,4 +499,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService, salesHistoryService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService, salesHistoryService, categoryImportService);

@@ -18,6 +18,7 @@ export interface CategoryService {
   list(organizationId: string): Promise<Category[]>;
   create(organizationId: string, input: CreateCategoryInput): Promise<{ ok: true; category: Category } | { ok: false; reason: 'CATEGORY_EXISTS' }>;
 }
+export interface CategoryImportService { template(): Promise<Buffer>; preview(file: Buffer): Promise<{ valid: boolean; rows: Array<{ row: number; name: string }>; errors: Array<{ row: number; message: string }> }>; import(organizationId: string, actorUserId: string, file: Buffer): Promise<{ ok: true; imported: number } | { ok: false; preview: { valid: boolean; rows: Array<{ row: number; name: string }>; errors: Array<{ row: number; message: string }> } }>; }
 
 export interface ProductService {
   list(organizationId: string): Promise<Product[]>;
@@ -115,8 +116,9 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService, categoryImportService?: CategoryImportService) {
   const app = Fastify({ logger: false });
+  app.addContentTypeParser('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
 
   await app.register(swagger, {
     openapi: {
@@ -183,6 +185,33 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await categoryService.create(authenticated.user.organizationId, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(201).send(result.category);
+  });
+
+  app.get('/api/v1/categories/import-template.xlsx', { schema: { summary: 'Download the category import template', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!categoryImportService) return reply.code(503).send({ error: 'CATEGORY_IMPORT_UNAVAILABLE' });
+    return reply.header('content-disposition', 'attachment; filename="category-import-template.xlsx"').type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(await categoryImportService.template());
+  });
+
+  app.post('/api/v1/categories/import.xlsx/preview', { schema: { summary: 'Validate a category import workbook without changing data', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!categoryImportService) return reply.code(503).send({ error: 'CATEGORY_IMPORT_UNAVAILABLE' });
+    if (!Buffer.isBuffer(request.body)) return reply.code(400).send({ error: 'INVALID_IMPORT_FILE' });
+    return categoryImportService.preview(request.body);
+  });
+
+  app.post('/api/v1/categories/import.xlsx', { schema: { summary: 'Atomically import validated category rows', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!categoryImportService) return reply.code(503).send({ error: 'CATEGORY_IMPORT_UNAVAILABLE' });
+    if (!Buffer.isBuffer(request.body)) return reply.code(400).send({ error: 'INVALID_IMPORT_FILE' });
+    const result = await categoryImportService.import(authenticated.user.organizationId, authenticated.user.id, request.body);
+    return result.ok ? reply.code(201).send(result) : reply.code(422).send(result);
   });
 
   app.get('/api/v1/products', { schema: { summary: 'List organization products', tags: ['Catalogue'] } }, async (request, reply) => {
