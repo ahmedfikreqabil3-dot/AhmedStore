@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoginPanel, NoInvoiceReturnApproval, NoInvoiceReturnSubmission, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, SalesHistorySearch, ShiftPanel, ShiftReviewPanel, approveNoInvoiceReturn, categoryImportActions, closeCashShift, createNoInvoiceIdempotencyKey, downloadSalesHistoryXlsx, loadClosedShifts, loadCurrentShift, loadHistoricalStock, loadInventoryOptions, loadNoInvoiceReturnOptions, loadPendingNoInvoiceReturns, loadProductCatalogue, loadSalesHistory, loadShiftSummary, loginUser, openCashShift, reviewCashShift, submitNoInvoiceReturn } from './App.js';
+import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoadedPurchaseBarcodeEntry, LoginPanel, NoInvoiceReturnApproval, NoInvoiceReturnSubmission, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, SalesHistorySearch, ShiftPanel, ShiftReviewPanel, approveNoInvoiceReturn, categoryImportActions, closeCashShift, createNoInvoiceIdempotencyKey, downloadSalesHistoryXlsx, loadClosedShifts, loadCurrentShift, loadHistoricalStock, loadInventoryOptions, loadNoInvoiceReturnOptions, loadPendingNoInvoiceReturns, loadProductCatalogue, loadPurchaseScanProducts, loadSalesHistory, loadShiftSummary, loginUser, openCashShift, reviewCashShift, submitNoInvoiceReturn } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -132,12 +132,17 @@ describe('App', () => {
   });
 
   it('keeps the catalogue shell scanner callback usable after login', async () => {
-    render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={emptySales} />);
+    render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={emptySales} loadPurchaseProducts={async () => [{ id: 'product-1', barcode: 'PREVIEW-1', name: 'منتج حقيقي' }]} />);
     fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'password' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
     const input = await screen.findByLabelText('باركود المشتريات');
     fireEvent.change(input, { target: { value: 'PREVIEW-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' }));
     expect(input).toHaveValue('');
+  });
+
+  it('loads the real authenticated purchase catalogue for barcode scanning and handles unavailable catalogues', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ products: [{ id: 'product-1', barcode: '123', name: 'قميص' }] }) }); vi.stubGlobal('fetch', fetchMock); await expect(loadPurchaseScanProducts()).resolves.toEqual([{ id: 'product-1', barcode: '123', name: 'قميص' }]); expect(fetchMock).toHaveBeenCalledWith('/api/v1/products', { credentials: 'include' }); vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 })); await expect(loadPurchaseScanProducts()).rejects.toThrow('PURCHASE_PRODUCTS_403');
+    const added: string[] = []; const onAdd = (product: { id: string }) => added.push(product.id); const view = render(<LoadedPurchaseBarcodeEntry loadProducts={async () => [{ id: 'product-1', barcode: '123', name: 'قميص' }]} onAdd={onAdd} />); const input = await screen.findByLabelText('باركود المشتريات'); fireEvent.change(input, { target: { value: '123' } }); fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' })); expect(added).toEqual(['product-1']); view.rerender(<LoadedPurchaseBarcodeEntry loadProducts={async () => { throw Error('offline'); }} onAdd={onAdd} />); expect(await screen.findByText('تعذر تحميل كتالوج المسح للمشتريات.')).toBeInTheDocument();
   });
 
   it('loads real sales history through the authenticated browser API client', async () => {
