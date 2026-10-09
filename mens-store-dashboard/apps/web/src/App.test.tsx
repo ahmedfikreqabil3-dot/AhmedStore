@@ -1,7 +1,9 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 import { App, ProductTable } from './App.js';
+
+afterEach(cleanup);
 
 describe('App', () => {
   it('renders the Arabic product-management shell and an empty state', () => {
@@ -26,5 +28,29 @@ describe('App', () => {
 
     expect(screen.getByText('—')).toBeInTheDocument();
     expect(screen.getByText('غير مصنفة')).toBeInTheDocument();
+  });
+
+  it('closes the payment dialog only after a confirmed sale is posted', async () => {
+    const postSale = async () => undefined;
+    render(<App postSale={postSale} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('supports the default POS posting callback for the shell preview', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the payment dialog open and explains a failed posting attempt', async () => {
+    render(<App postSale={async () => { throw Error('offline'); }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'فتح الدفع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الدفع' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('تعذر إتمام الفاتورة');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
