@@ -77,14 +77,16 @@ Acceptance criteria:
 Exit criteria: a purchasing user can post and revise a purchase without bypassing
 the existing backend controls.
 
-**Implemented entry workflow:** the authenticated editor loads suppliers,
+**Implemented entry and revision workflow:** the authenticated editor loads suppliers,
 branches, and the live product catalogue. It adds products through a barcode
 scan/entry or product selection, keeps a visible editable line list, supports
 multiple payment allocations (including credit), and uses fixed four-decimal
 integer units to require exact payment-to-invoice equality before posting to
-the idempotent `POST /api/v1/purchases` endpoint. The existing immutable
-replacement endpoint is not yet exposed through this editor; that remains the
-last 4B UI action.
+the idempotent `POST /api/v1/purchases` endpoint. From a selected posted
+purchase, a separate revision editor preloads the persisted supplier, branch,
+and line snapshots and makes clear that it will void the original and submit a
+replacement through `PUT /api/v1/purchases/:purchaseId`; it never mutates a
+posted purchase in place.
 
 ### 4C — purchase returns and split settlements
 
