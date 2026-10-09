@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoginPanel, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadProductCatalogue, loadSalesHistory, loginUser } from './App.js';
+import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoginPanel, ProductCatalogue, ProductTable, ProductTableRow, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, ShiftPanel, categoryImportActions, closeCashShift, downloadSalesHistoryXlsx, loadCurrentShift, loadHistoricalStock, loadInventoryOptions, loadProductCatalogue, loadSalesHistory, loginUser, openCashShift } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -25,6 +25,20 @@ describe('App', () => {
   it('keeps login disabled until complete and explains rejected credentials', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 })); await expect(loginUser('organization-1', 'ahmed@example.com', 'bad')).rejects.toThrow('LOGIN_401');
     render(<LoginPanel login={async () => { throw Error('bad'); }} onSuccess={() => undefined} />); expect(screen.getByRole('button', { name: 'تسجيل الدخول' })).toBeDisabled(); fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'bad' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تسجيل الدخول');
+  });
+
+  it('uses backend-managed current, open, and close cash-shift operations', async () => {
+    const open = { id: 'shift-1', status: 'OPEN' as const, expectedCash: null, countedCash: null, cashDifference: null, discrepancyReason: null }; const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ shift: null }) }).mockResolvedValueOnce({ ok: true, json: async () => open }).mockResolvedValueOnce({ ok: true, json: async () => ({ ...open, status: 'CLOSED' as const, countedCash: '10.0000' }) }); vi.stubGlobal('fetch', fetchMock); await expect(loadCurrentShift()).resolves.toBeNull(); await expect(openCashShift()).resolves.toEqual(open); await expect(closeCashShift('shift-1', '10.0000', '')).resolves.toMatchObject({ status: 'CLOSED' }); expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/shifts/shift-1/close', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('opens and closes a shift through the panel and reports errors', async () => {
+    const open = { id: 'shift-1', status: 'OPEN' as const, expectedCash: null, countedCash: null, cashDifference: null, discrepancyReason: null }; const close = vi.fn().mockResolvedValue({ ...open, status: 'CLOSED' as const, countedCash: '10.0000' }); render(<ShiftPanel loadShift={async () => null} openShift={async () => open} closeShift={close} />); expect(await screen.findByRole('button', { name: 'فتح وردية' })).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'فتح وردية' })); await screen.findByText('وردية مفتوحة'); fireEvent.change(screen.getByLabelText('النقد الفعلي'), { target: { value: '10.0000' } }); fireEvent.change(screen.getByLabelText('سبب فرق النقد'), { target: { value: 'فرق بسيط' } }); fireEvent.click(screen.getByRole('button', { name: 'إغلاق الوردية' })); await waitFor(() => expect(close).toHaveBeenCalledWith('shift-1', '10.0000', 'فرق بسيط'));
+    render(<ShiftPanel loadShift={async () => { throw Error('offline'); }} />); expect(await screen.findByText('تعذر تحميل الوردية الحالية.')).toBeInTheDocument();
+  });
+
+  it('rejects failed shift operations and reports a failed action', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 401 }).mockResolvedValueOnce({ ok: false, status: 409 }).mockResolvedValueOnce({ ok: false, status: 400 })); await expect(loadCurrentShift()).rejects.toThrow('SHIFT_401'); await expect(openCashShift()).rejects.toThrow('SHIFT_OPEN_409'); await expect(closeCashShift('shift-1', '10.0000', 'فرق')).rejects.toThrow('SHIFT_CLOSE_400');
+    render(<ShiftPanel loadShift={async () => null} openShift={async () => { throw Error('offline'); }} />); fireEvent.click(await screen.findByRole('button', { name: 'فتح وردية' })); expect(await screen.findByText('تعذر حفظ الوردية.')).toBeInTheDocument();
   });
 
   it('shows separate product details, barcode, category, pricing, and stock columns', () => {
