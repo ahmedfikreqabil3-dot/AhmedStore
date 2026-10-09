@@ -94,10 +94,12 @@ export function SalePaymentDialog({ open, onConfirm, onSucceeded }: { open: bool
 export type SalesHistoryRow = { id: string; customer: string; total: string };
 
 export type SalesHistoryPage = { sales: SalesHistoryRow[]; total: number };
-export type LoadSalesHistory = () => Promise<SalesHistoryPage>;
+export type SalesHistoryFilters = { from?: string; to?: string; limit?: number; offset?: number };
+export type LoadSalesHistory = (filters?: SalesHistoryFilters) => Promise<SalesHistoryPage>;
 
-export async function loadSalesHistory(): Promise<SalesHistoryPage> {
-  const response = await fetch('/api/v1/sales?limit=50&offset=0', { credentials: 'include' });
+export async function loadSalesHistory(filters: SalesHistoryFilters = {}): Promise<SalesHistoryPage> {
+  const query = new URLSearchParams({ limit: String(filters.limit ?? 50), offset: String(filters.offset ?? 0) }); if (filters.from) query.set('from', filters.from); if (filters.to) query.set('to', filters.to);
+  const response = await fetch(`/api/v1/sales?${query}`, { credentials: 'include' });
   if (!response.ok) throw Error(`SALES_HISTORY_${response.status}`);
   const body = await response.json() as { sales: Array<{ id: string; customerName: string; total: string }>; total: number };
   return { sales: body.sales.map((sale) => ({ id: sale.id, customer: sale.customerName, total: sale.total })), total: body.total };
@@ -155,6 +157,8 @@ export function SalesHistory({ sales }: { sales: SalesHistoryRow[] }) {
   return <section aria-labelledby="sales-history-title"><h2 id="sales-history-title">سجل المبيعات</h2><ul>{sales.map((sale) => <li key={sale.id}>{sale.customer} — {sale.total} <button type="button" onClick={() => setSelectedId(sale.id)}>عرض التفاصيل</button></li>)}</ul>{selected ? <article aria-label="تفاصيل الفاتورة"><h3>تفاصيل الفاتورة</h3><p>{selected.customer}: {selected.total}</p></article> : <p role="status">اختر فاتورة لعرض تفاصيلها.</p>}</section>;
 }
 
+export function SalesHistorySearch({ loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx }: { loadSales?: LoadSalesHistory; exportSales?: () => Promise<void> }) { const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [applied, setApplied] = useState<SalesHistoryFilters>({}); const [page, setPage] = useState(0); const [result, setResult] = useState<SalesHistoryPage | null>(null); const [error, setError] = useState<string | null>(null); useEffect(() => { let active = true; setResult(null); setError(null); void loadSales({ ...applied, limit: 50, offset: page * 50 }).then((value) => { if (active) setResult(value); }).catch(() => { if (active) setError('تعذر تحميل سجل المبيعات. سجّل الدخول ثم أعد المحاولة.'); }); return () => { active = false; }; }, [loadSales, applied, page]); function apply() { setPage(0); setApplied({ from: from || undefined, to: to || undefined }); } return <section aria-label="بحث سجل المبيعات"><label>من تاريخ<input aria-label="من تاريخ المبيعات" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>إلى تاريخ<input aria-label="إلى تاريخ المبيعات" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label><button type="button" onClick={apply}>تطبيق فلتر المبيعات</button>{result === null ? error ? <p role="alert">{error}</p> : <p role="status">جارٍ تحميل سجل المبيعات…</p> : <><SalesHistory sales={result.sales} /><p role="status">{result.total} فاتورة</p><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>الصفحة السابقة</button><button type="button" disabled={(page + 1) * 50 >= result.total} onClick={() => setPage((value) => value + 1)}>الصفحة التالية</button><SalesHistoryExport onExport={exportSales} /></>}</section>; }
+
 export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id: string; barcode: string | null; name: string }>; onAdd: (product: { id: string; barcode: string | null; name: string }) => void }) {
   const [barcode, setBarcode] = useState(''); const [error, setError] = useState<string | null>(null);
   function submit() { const product = products.find((candidate) => candidate.barcode === barcode.trim()); if (!product) { setError('الباركود غير معروف.'); return; } onAdd(product); setBarcode(''); setError(null); }
@@ -175,16 +179,6 @@ export function NoInvoiceReturnApproval({ loadPending = loadPendingNoInvoiceRetu
 export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx, categoryImport = categoryImportActions, login = loginUser }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void>; categoryImport?: CategoryImportActions; login?: (organizationId: string, email: string, password: string) => Promise<SignedInUser> }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [sessionVersion, setSessionVersion] = useState(0); const [user, setUser] = useState<SignedInUser | null>(null);
-  const [sales, setSales] = useState<SalesHistoryRow[]>([]);
-  const [salesLoading, setSalesLoading] = useState(false);
-  const [salesError, setSalesError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!user) { setSales([]); setSalesLoading(false); setSalesError(null); return; }
-    let active = true;
-    setSalesLoading(true); setSalesError(null);
-    void loadSales().then((page) => { if (active) setSales(page.sales); }).catch(() => { if (active) setSalesError('تعذر تحميل سجل المبيعات. سجّل الدخول ثم أعد المحاولة.'); }).finally(() => { if (active) setSalesLoading(false); });
-    return () => { active = false; };
-  }, [loadSales, user]);
   return (
     <main dir="rtl" lang="ar">
       <h1>أحمد ستور</h1>
@@ -192,7 +186,7 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
       {user ? <p role="status">مرحباً، {user.name}</p> : <LoginPanel login={login} onSuccess={(signedInUser) => { setUser(signedInUser); setSessionVersion((value) => value + 1); }} />}
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
-      {user ? <div key={sessionVersion}><ShiftPanel /><LoadedProductCatalogue /><CategoryImportPanel actions={categoryImport} /><HistoricalInventory />{salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}{(user.role === 'MANAGER' || user.role === 'ADMIN') && <NoInvoiceReturnSubmission />}{(user.role === 'FINANCE' || user.role === 'ADMIN') && <><NoInvoiceReturnApproval /><ShiftReviewPanel /></>}<PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} /></div> : <p role="status">سجّل الدخول للوصول إلى العمليات والبيانات المحمية.</p>}
+      {user ? <div key={sessionVersion}><ShiftPanel /><LoadedProductCatalogue /><CategoryImportPanel actions={categoryImport} /><HistoricalInventory /><SalesHistorySearch loadSales={loadSales} exportSales={exportSales} />{(user.role === 'MANAGER' || user.role === 'ADMIN') && <NoInvoiceReturnSubmission />}{(user.role === 'FINANCE' || user.role === 'ADMIN') && <><NoInvoiceReturnApproval /><ShiftReviewPanel /></>}<PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} /></div> : <p role="status">سجّل الدخول للوصول إلى العمليات والبيانات المحمية.</p>}
     </main>
   );
 }
