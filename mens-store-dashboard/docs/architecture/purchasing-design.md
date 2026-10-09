@@ -21,10 +21,11 @@ React replacement has passed acceptance and reconciliation.
   quantity received minus previously posted returns, and it only posts when
   the selected warehouse has sufficient stock to remove.
 - A credit-funded return posts `PURCHASE_RETURN_CREDIT` to reduce the payable.
-  **Working decision (2026-10-09):** every purchase return must explicitly
-  choose its settlement: supplier credit or a cash/card/wallet/Instapay refund.
-  The API must post the matching supplier-ledger reduction or treasury receipt;
-  it must never infer settlement from the original payment mix.
+  Every purchase return explicitly supplies one or more settlement allocations:
+  supplier credit and/or cash/card/wallet/Instapay treasury refunds. Their exact
+  four-decimal total must equal the calculated return value. The API persists
+  each allocation, posts its matching supplier-ledger reduction or treasury
+  receipt, and never infers settlement from the original payment mix.
 
 ## Acceptance criteria for the API slice
 
@@ -39,3 +40,6 @@ React replacement has passed acceptance and reconciliation.
    linked replacement in one serializable transaction.
 5. Purchase return failures leave no partial document, stock, treasury, or
    supplier-ledger records.
+6. Split settlement allocations are persisted with the return and the return,
+   inventory issue, treasury receipts, supplier credit, and audit event use one
+   serializable database transaction.

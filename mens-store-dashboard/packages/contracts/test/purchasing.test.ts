@@ -20,8 +20,8 @@ describe('purchasing contracts', () => {
 
   it('requires explicit supplier-credit or treasury-refund settlement for a purchase return', () => {
     const base = { purchaseId: productId, lines: [{ purchaseLineId: productId, quantity: '1.0000' }], reason: 'Damaged item', occurredAt: '2026-01-01T00:00:00.000Z' };
-    expect(createPurchaseReturnSchema.parse({ ...base, settlement: { kind: 'SUPPLIER_CREDIT' } }).settlement).toEqual({ kind: 'SUPPLIER_CREDIT' });
-    expect(createPurchaseReturnSchema.parse({ ...base, settlement: { kind: 'TREASURY_REFUND', paymentMethod: 'CASH' } }).settlement).toEqual({ kind: 'TREASURY_REFUND', paymentMethod: 'CASH' });
+    expect(createPurchaseReturnSchema.parse({ ...base, settlements: [{ kind: 'SUPPLIER_CREDIT', amount: '10.0000' }] }).settlements).toHaveLength(1);
+    expect(createPurchaseReturnSchema.parse({ ...base, settlements: [{ kind: 'TREASURY_REFUND', paymentMethod: 'CASH', amount: '10.0000' }] }).settlements).toHaveLength(1);
     expect(createPurchaseReturnSchema.safeParse(base).success).toBe(false);
   });
 });

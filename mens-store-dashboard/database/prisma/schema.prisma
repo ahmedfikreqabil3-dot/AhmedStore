@@ -351,11 +351,23 @@ model PurchaseReturn {
   occurredAt        DateTime
   createdAt         DateTime       @default(now())
   lines             PurchaseReturnLine[]
+  settlements       PurchaseReturnSettlement[]
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, purchaseId, occurredAt])
   @@index([organizationId, supplierId, occurredAt])
   @@index([organizationId, warehouseId, occurredAt])
+}
+
+model PurchaseReturnSettlement {
+  id               String         @id @default(uuid())
+  purchaseReturnId String
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Restrict)
+  kind             String
+  paymentMethod    PaymentMethod?
+  amount           Decimal        @db.Decimal(19, 4)
+  createdAt        DateTime       @default(now())
+  @@index([purchaseReturnId, kind])
 }
 
 model PurchaseReturnLine {

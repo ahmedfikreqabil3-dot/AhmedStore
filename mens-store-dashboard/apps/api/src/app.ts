@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Supplier, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Supplier, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -48,6 +48,9 @@ export interface SupplierService {
 }
 export interface PurchaseService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
+}
+export interface PurchaseReturnService {
+  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: ReturnType<typeof createPurchaseReturnSchema.parse>): Promise<{ ok: true; purchaseReturn: { id: string; purchaseId: string; total: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 
 export interface SalesService {
@@ -107,7 +110,7 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -359,6 +362,19 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await purchaseService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.purchase);
+  });
+
+  app.post('/api/v1/purchase-returns', { schema: { summary: 'Post an atomic purchase return with split supplier-credit and treasury-refund settlements', tags: ['Purchasing'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'purchases:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const idempotencyKey = request.headers['idempotency-key'];
+    if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return reply.code(400).send({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    const parsed = createPurchaseReturnSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PURCHASE_RETURN' });
+    const result = await purchaseReturnService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(result.replayed ? 200 : 201).send(result.purchaseReturn);
   });
 
   app.post('/api/v1/sales', { schema: { summary: 'Post an atomic sale with payments and stock issue movements', tags: ['Sales'] } }, async (request, reply) => {

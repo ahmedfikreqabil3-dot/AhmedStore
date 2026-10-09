@@ -18,6 +18,7 @@ export function createPurchaseReturnService(repository: PurchaseReturnRepository
     const requested = new Map<string, bigint>(); for (const line of input.lines) requested.set(line.purchaseLineId, (requested.get(line.purchaseLineId) ?? 0n) + units(line.quantity));
     for (const [lineId, quantity] of requested) { const line = purchase.lines.find((candidate) => candidate.id === lineId); if (!line) return { ok: false as const, reason: 'PURCHASE_LINE_UNAVAILABLE' as const }; if (quantity + units(await repository.returnedQuantity(lineId, organizationId)) > units(line.quantity)) return { ok: false as const, reason: 'RETURN_QUANTITY_EXCEEDED' as const }; }
     let total = 0n; const lines = input.lines.map((inputLine) => { const line = purchase.lines.find((candidate) => candidate.id === inputLine.purchaseLineId)!; const lineTotal = units(line.total) * units(inputLine.quantity) / units(line.quantity); total += lineTotal; return { purchaseLineId: line.id, productId: line.productId, quantity: inputLine.quantity, unitCost: line.unitCost, total: format(lineTotal) }; });
+    if (input.settlements.reduce((sum, settlement) => sum + units(settlement.amount), 0n) !== total) return { ok: false as const, reason: 'SETTLEMENT_TOTAL_MISMATCH' as const };
     const result = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, purchase, calculated: { total: format(total), lines } });
     return result.ok ? { ok: true as const, purchaseReturn: result.purchaseReturn, replayed: false } : result;
   } };

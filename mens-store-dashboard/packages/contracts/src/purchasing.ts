@@ -31,8 +31,8 @@ export type CreatePurchaseInput = z.infer<typeof createPurchaseSchema>;
 
 export const purchaseReturnLineInputSchema = z.object({ purchaseLineId: z.string().uuid(), quantity: positivePurchaseDecimalSchema });
 export const purchaseReturnSettlementSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('SUPPLIER_CREDIT') }),
-  z.object({ kind: z.literal('TREASURY_REFUND'), paymentMethod: paymentMethodSchema.exclude(['CREDIT']) })
+  z.object({ kind: z.literal('SUPPLIER_CREDIT'), amount: positivePurchaseDecimalSchema }),
+  z.object({ kind: z.literal('TREASURY_REFUND'), paymentMethod: paymentMethodSchema.exclude(['CREDIT']), amount: positivePurchaseDecimalSchema })
 ]);
-export const createPurchaseReturnSchema = z.object({ purchaseId: z.string().uuid(), lines: z.array(purchaseReturnLineInputSchema).min(1), reason: z.string().trim().min(3).max(500), settlement: purchaseReturnSettlementSchema, occurredAt: z.coerce.date() });
+export const createPurchaseReturnSchema = z.object({ purchaseId: z.string().uuid(), lines: z.array(purchaseReturnLineInputSchema).min(1), reason: z.string().trim().min(3).max(500), settlements: z.array(purchaseReturnSettlementSchema).min(1), occurredAt: z.coerce.date() });
 export type CreatePurchaseReturnInput = z.infer<typeof createPurchaseReturnSchema>;
