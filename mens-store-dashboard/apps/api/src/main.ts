@@ -14,6 +14,7 @@ import { createReturnRevisionService } from './modules/sales/return-revision-ser
 import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './modules/sales/no-invoice-return-service.js';
 import { createShiftTotalsService } from './modules/finance/shift-totals.js';
 import { createShiftService } from './modules/finance/shift-service.js';
+import { createExpenseService } from './modules/finance/expense-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -323,6 +324,21 @@ const shiftTotalsService = createShiftTotalsService({
   }
 });
 
+const expenseService = createExpenseService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const expense = await prisma.expense.findUnique({ where: { organizationId_idempotencyKey: { organizationId, idempotencyKey } } });
+    return expense && { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
+  },
+  async post(command) {
+    return prisma.$transaction(async (transaction) => {
+      const expense = await transaction.expense.create({ data: command });
+      await transaction.treasuryTransaction.create({ data: { id: crypto.randomUUID(), organizationId: command.organizationId, type: 'EXPENSE_PAYMENT', paymentMethod: command.paymentMethod, amount: command.amount, sourceType: 'Expense', sourceId: expense.id, actorUserId: command.actorUserId, occurredAt: command.occurredAt } });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'EXPENSE_POSTED', entityType: 'Expense', entityId: expense.id } });
+      return { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+});
+
 function shiftRecord(shift: NonNullable<Awaited<ReturnType<typeof prisma.shift.findUnique>>>) {
   return { ...shift, expectedCash: shift.expectedCash?.toFixed(4) ?? null, countedCash: shift.countedCash?.toFixed(4) ?? null, cashDifference: shift.cashDifference?.toFixed(4) ?? null };
 }
@@ -354,4 +370,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService);

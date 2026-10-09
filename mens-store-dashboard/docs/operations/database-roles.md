@@ -5,10 +5,11 @@ the least-privileged application role. When a migration creates a new table,
 the database deployment step must grant the runtime role only the operations it
 needs before deploying the API.
 
-For the treasury ledger, the local development role is configured with:
+For the treasury ledger and expenses, the local development role is configured with:
 
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "TreasuryTransaction" TO ahmed_store_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "Expense" TO ahmed_store_app;
 ```
 
 In staging and production, replace `ahmed_store_app` with that environment's

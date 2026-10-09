@@ -7,6 +7,7 @@ import { createSessionService } from '../../src/modules/identity/session.js';
 import { hashPassword } from '../../src/modules/identity/password.js';
 import { createCategoryService } from '../../src/modules/catalogue/category.js';
 import { createSalesService } from '../../src/modules/sales/service.js';
+import { createExpenseService } from '../../src/modules/finance/expense-service.js';
 
 const prisma = new PrismaClient();
 let organizationId = '';
@@ -89,6 +90,21 @@ const realSalesService = createSalesService({
   }
 });
 const salesApp = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, realSalesService);
+const realExpenseService = createExpenseService({
+  async findByIdempotencyKey(currentOrganizationId, idempotencyKey) {
+    const expense = await prisma.expense.findUnique({ where: { organizationId_idempotencyKey: { organizationId: currentOrganizationId, idempotencyKey } } });
+    return expense && { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
+  },
+  async post(command) {
+    return prisma.$transaction(async (transaction) => {
+      const expense = await transaction.expense.create({ data: command });
+      await transaction.treasuryTransaction.create({ data: { id: randomUUID(), organizationId: command.organizationId, type: 'EXPENSE_PAYMENT', paymentMethod: command.paymentMethod, amount: command.amount, sourceType: 'Expense', sourceId: expense.id, actorUserId: command.actorUserId, occurredAt: command.occurredAt } });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'EXPENSE_POSTED', entityType: 'Expense', entityId: expense.id } });
+      return { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+});
+const expenseApp = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, realExpenseService);
 
 beforeAll(async () => {
   const organization = await prisma.organization.create({ data: { name: 'Integration Test Store' } });
@@ -97,12 +113,14 @@ beforeAll(async () => {
   otherOrganizationId = otherOrganization.id;
   await app.ready();
   await salesApp.ready();
+  await expenseApp.ready();
 });
 
 afterEach(async () => {
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { organizationId } });
   await prisma.treasuryTransaction.deleteMany({ where: { organizationId } });
+  await prisma.expense.deleteMany({ where: { organizationId } });
   await prisma.inventoryTransaction.deleteMany({ where: { organizationId } });
   await prisma.returnPayment.deleteMany({ where: { salesReturn: { organizationId } } });
   await prisma.returnLine.deleteMany({ where: { salesReturn: { organizationId } } });
@@ -121,6 +139,7 @@ afterEach(async () => {
 afterAll(async () => {
   await app.close();
   await salesApp.close();
+  await expenseApp.close();
   await prisma.organization.delete({ where: { id: organizationId } });
   await prisma.organization.delete({ where: { id: otherOrganizationId } });
   await prisma.$disconnect();
@@ -222,5 +241,24 @@ describe('identity registration against PostgreSQL', () => {
     expect(rejected.statusCode).toBe(409);
     expect(await prisma.sale.count({ where: { organizationId } })).toBe(1);
     expect(await prisma.inventoryTransaction.count({ where: { organizationId, productId: product.id } })).toBe(2);
+  });
+
+  it('posts an expense, treasury outflow, and audit event atomically and replays it safely', async () => {
+    const administrator = { organizationId, name: 'Finance Admin', email: `finance-${randomUUID()}@example.test`, password: 'SecurePassword123!', role: 'FINANCE' as const };
+    const user = await prisma.user.create({ data: { organizationId, name: administrator.name, email: administrator.email, passwordHash: await hashPassword(administrator.password), role: administrator.role } });
+    const login = await expenseApp.inject({ method: 'POST', url: '/api/v1/auth/login', payload: administrator });
+    const cookie = String(login.headers['set-cookie']).split(';')[0];
+    const body = { category: 'Utilities', description: 'Electricity bill', paymentMethod: 'INSTAPAY' as const, amount: '250.5000', occurredAt: '2026-01-01T00:00:00.000Z' };
+
+    const created = await expenseApp.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie, 'idempotency-key': 'expense-1' }, payload: body });
+    expect(created.statusCode).toBe(201);
+    const expenseId = created.json().id;
+    expect(await prisma.expense.findUnique({ where: { id: expenseId } })).toMatchObject({ organizationId, category: body.category, description: body.description, paymentMethod: body.paymentMethod, amount: new Prisma.Decimal(body.amount), actorUserId: user.id });
+    expect(await prisma.treasuryTransaction.findMany({ where: { organizationId, sourceType: 'Expense', sourceId: expenseId } })).toMatchObject([{ type: 'EXPENSE_PAYMENT', paymentMethod: body.paymentMethod, amount: new Prisma.Decimal(body.amount), actorUserId: user.id }]);
+    expect(await prisma.auditEvent.findFirst({ where: { organizationId, action: 'EXPENSE_POSTED', entityId: expenseId } })).toMatchObject({ actorUserId: user.id });
+
+    expect((await expenseApp.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie, 'idempotency-key': 'expense-1' }, payload: body })).statusCode).toBe(200);
+    expect(await prisma.expense.count({ where: { organizationId } })).toBe(1);
+    expect(await prisma.treasuryTransaction.count({ where: { organizationId, sourceType: 'Expense', sourceId: expenseId } })).toBe(1);
   });
 });

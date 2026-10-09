@@ -407,4 +407,23 @@ describe('API health endpoint', () => {
     expect((await finance.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/approve`, headers: { cookie: 'session=token' } })).json()).toEqual({ id: returnId });
     await Promise.all([finance.close(), manager.close(), anonymous.close()]);
   });
+
+  it('posts validated idempotent expenses only for Finance or Admin', async () => {
+    const body = { category: 'Utilities', description: 'Electricity bill', paymentMethod: 'CASH' as const, amount: '250.5000', occurredAt: '2026-01-01T00:00:00.000Z' };
+    const expense = { id: '9f112860-9eb3-402f-b722-740616412a85', organizationId: input.organizationId, ...body, occurredAt: new Date(body.occurredAt) };
+    const expenses = { post: async (_organizationId: string, _actorUserId: string, key: string) => ({ ok: true as const, expense, replayed: key === 'replay' }) };
+    const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'FINANCE' as const } }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, expenses);
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, expenses);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, expenses);
+
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/expenses', payload: body })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'expense-1' }, payload: body })).statusCode).toBe(403);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(400);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'expense-1' }, payload: {} })).statusCode).toBe(400);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'expense-1' }, payload: body })).statusCode).toBe(201);
+    expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
+    await Promise.all([finance.close(), cashier.close(), anonymous.close()]);
+  });
 });

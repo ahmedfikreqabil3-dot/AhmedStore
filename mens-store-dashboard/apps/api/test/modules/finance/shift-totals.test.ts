@@ -6,11 +6,12 @@ describe('shift totals', () => {
     expect(calculateShiftTotals([
       { type: 'SALE_RECEIPT', paymentMethod: 'CASH', amount: '100.1250' },
       { type: 'RETURN_REFUND', paymentMethod: 'CASH', amount: '30.2500' },
+      { type: 'EXPENSE_PAYMENT', paymentMethod: 'CASH', amount: '5.0000' },
       { type: 'SALE_RECEIPT', paymentMethod: 'CARD', amount: '44.0000' },
       { type: 'RETURN_REFUND', paymentMethod: 'WALLET', amount: '3.0000' }
-    ])).toEqual({ receipts: '144.1250', refunds: '33.2500', net: '110.8750', methods: [
+    ])).toEqual({ receipts: '144.1250', refunds: '38.2500', net: '105.8750', methods: [
       { method: 'CARD', receipts: '44.0000', refunds: '0.0000', net: '44.0000' },
-      { method: 'CASH', receipts: '100.1250', refunds: '30.2500', net: '69.8750' },
+      { method: 'CASH', receipts: '100.1250', refunds: '35.2500', net: '64.8750' },
       { method: 'WALLET', receipts: '0.0000', refunds: '3.0000', net: '-3.0000' }
     ] });
   });

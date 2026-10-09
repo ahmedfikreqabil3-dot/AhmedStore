@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createSaleSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreateSaleInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createSaleSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreateSaleInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -78,6 +78,10 @@ export interface ReturnRevisionService {
   revise(organizationId: string, actorUserId: string, returnId: string, idempotencyKey: string, input: CreateInvoiceReturnInput): Promise<{ ok: true; salesReturn: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 
+export interface ExpenseService {
+  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateExpenseInput): Promise<{ ok: true; expense: { id: string; organizationId: string; category: string; description: string; paymentMethod: PaymentMethod; amount: string; occurredAt: Date }; replayed: boolean }>;
+}
+
 function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
@@ -95,7 +99,7 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -234,6 +238,18 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await shiftTotalsService!.summarize(authenticated.user.organizationId, openedAt, closedAt);
     if (!result.ok) return reply.code(400).send({ error: result.reason });
     return result.totals;
+  });
+
+  app.post('/api/v1/expenses', { schema: { summary: 'Post an immutable expense and matching treasury outflow', tags: ['Finance'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'expenses:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const idempotencyKey = request.headers['idempotency-key'];
+    if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return reply.code(400).send({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    const parsed = createExpenseSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_EXPENSE' });
+    const result = await expenseService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    return reply.code(result.replayed ? 200 : 201).send(result.expense);
   });
 
   app.post('/api/v1/shifts/open', { schema: { summary: 'Open the authenticated user’s cash shift', tags: ['Shifts'] } }, async (request, reply) => {

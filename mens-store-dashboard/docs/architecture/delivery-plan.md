@@ -72,9 +72,9 @@ and tenant isolation server-side; all Phase 2 code has 100% coverage.
 customers, idempotent sales, invoice returns, no-invoice returns with Finance
 approval, an immutable treasury ledger, cashier-owned shift open/close, finance
 review, shift-total calculation, and audited
-return revision/replacement are implemented and verified against PostgreSQL.
-Purchasing, expenses, and end-to-end commerce
-reconciliation remain open.
+return revision/replacement, and immutable expense posting with a matching
+treasury outflow are implemented and verified against PostgreSQL. Purchasing,
+expense reporting/UI, and end-to-end commerce reconciliation remain open.
 
 **Deliverables:** catalogue, warehouse, inventory ledger, customer ledger,
 sales, payments, returns, expense/treasury posting primitives, idempotency, and
