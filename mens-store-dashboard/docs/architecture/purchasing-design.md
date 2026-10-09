@@ -9,6 +9,11 @@ React replacement has passed acceptance and reconciliation.
 - A purchase invoice is an immutable posted document. Editing a posted invoice
   voids the original through compensating movements and posts a linked
   replacement; it never overwrites original lines, payments, or totals.
+- A revision is rejected after a posted purchase return, and it is rejected if
+  the original receipt can no longer be removed from stock. When valid, one
+  serializable transaction voids the original, posts its inventory and
+  settlement reversals, creates a linked replacement, and posts the new
+  inventory and settlement entries.
 - Barcode scanning is a frontend convenience. The server still receives a
   product UUID and verifies that the product belongs to the organization and
   is active. The barcode snapshot on each purchase line preserves what was

@@ -52,6 +52,9 @@ export interface PurchaseService {
 export interface PurchaseReturnService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: ReturnType<typeof createPurchaseReturnSchema.parse>): Promise<{ ok: true; purchaseReturn: { id: string; purchaseId: string; total: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
+export interface PurchaseRevisionService {
+  revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
+}
 
 export interface SalesService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateSaleInput): Promise<{ ok: true; sale: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
@@ -110,7 +113,7 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -360,6 +363,20 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const parsed = createPurchaseSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PURCHASE' });
     const result = await purchaseService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    if (!result.ok) return reply.code(409).send({ error: result.reason });
+    return reply.code(result.replayed ? 200 : 201).send(result.purchase);
+  });
+
+  app.put('/api/v1/purchases/:purchaseId', { schema: { summary: 'Replace a posted purchase through compensating stock and financial entries', tags: ['Purchasing'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'purchases:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const { purchaseId } = request.params as { purchaseId?: string };
+    const idempotencyKey = request.headers['idempotency-key'];
+    if (!purchaseId || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return reply.code(400).send({ error: !purchaseId ? 'INVALID_PURCHASE' : 'IDEMPOTENCY_KEY_REQUIRED' });
+    const parsed = createPurchaseSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PURCHASE' });
+    const result = await purchaseRevisionService!.revise(authenticated.user.organizationId, authenticated.user.id, purchaseId, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.purchase);
   });
