@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { App, ProductTable, SalesHistory } from './App.js';
+import { App, ProductCatalogue, ProductTable, SalesHistory } from './App.js';
 
 afterEach(cleanup);
 
@@ -28,6 +28,30 @@ describe('App', () => {
 
     expect(screen.getByText('—')).toBeInTheDocument();
     expect(screen.getByText('غير مصنفة')).toBeInTheDocument();
+  });
+
+  it('filters and paginates the product catalogue without losing barcode details', () => {
+    const products = [
+      { id: '1', name: 'قميص أزرق', sku: 'SH-1', barcode: '100', category: 'قمصان', salePrice: '10.0000', stock: '1.0000', warehouse: 'الرئيسي' },
+      { id: '2', name: 'قميص أبيض', sku: 'SH-2', barcode: '101', category: 'قمصان', salePrice: '20.0000', stock: '2.0000', warehouse: 'الرئيسي' },
+      { id: '3', name: 'بنطال', sku: 'TR-1', barcode: '200', category: 'بناطيل', salePrice: '30.0000', stock: '3.0000', warehouse: 'الرئيسي' },
+      { id: '4', name: 'بدون فئة', sku: 'NO-1', barcode: null, category: null, salePrice: '40.0000', stock: '4.0000', warehouse: 'الرئيسي' }
+    ];
+    render(<ProductCatalogue products={products} pageSize={2} />);
+    expect(screen.getByText('قميص أزرق')).toBeInTheDocument();
+    expect(screen.queryByText('بنطال')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    expect(screen.getByText('بنطال')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'السابق' }));
+    expect(screen.getByText('قميص أزرق')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('بحث المنتجات'), { target: { value: '101' } });
+    expect(screen.getByText('قميص أبيض')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('بحث المنتجات'), { target: { value: 'غير موجود' } });
+    expect(screen.getByText('لا توجد منتجات مطابقة للفلتر الحالي.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('بحث المنتجات'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('تصفية الفئة'), { target: { value: 'بناطيل' } });
+    expect(screen.getByText('بنطال')).toBeInTheDocument();
+    expect(screen.queryByText('قميص أبيض')).not.toBeInTheDocument();
   });
 
   it('closes the payment dialog only after a confirmed sale is posted', async () => {

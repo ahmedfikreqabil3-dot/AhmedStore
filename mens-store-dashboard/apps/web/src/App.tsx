@@ -45,6 +45,20 @@ export function ProductTable({ products }: { products: ProductTableRow[] }) {
   );
 }
 
+export function ProductCatalogue({ products, pageSize = 10 }: { products: ProductTableRow[]; pageSize?: number }) {
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('');
+  const [page, setPage] = useState(0);
+  const categories = [...new Set(products.flatMap((product) => product.category ? [product.category] : []))].sort();
+  const filtered = products.filter((product) => (!category || product.category === category) && (!query || `${product.name} ${product.sku} ${product.barcode ?? ''}`.toLowerCase().includes(query.toLowerCase())));
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pages - 1);
+  const visible = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  function updateQuery(value: string) { setQuery(value); setPage(0); }
+  function updateCategory(value: string) { setCategory(value); setPage(0); }
+  return <section aria-labelledby="catalogue-title"><h2 id="catalogue-title">كتالوج المنتجات</h2><label>بحث<input aria-label="بحث المنتجات" value={query} onChange={(event) => updateQuery(event.target.value)} /></label><label>الفئة<select aria-label="تصفية الفئة" value={category} onChange={(event) => updateCategory(event.target.value)}><option value="">كل الفئات</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><ProductTable products={visible} />{filtered.length > pageSize && <nav aria-label="ترقيم صفحات المنتجات"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={currentPage === 0}>السابق</button><span>صفحة {currentPage + 1} من {pages}</span><button type="button" onClick={() => setPage((value) => Math.min(pages - 1, value + 1))} disabled={currentPage === pages - 1}>التالي</button></nav>}</section>;
+}
+
 export function SalePaymentDialog({ open, onConfirm, onSucceeded }: { open: boolean; onConfirm: () => Promise<void>; onSucceeded: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -73,7 +87,7 @@ export function App({ postSale = async () => undefined }: { postSale?: () => Pro
       <p>إدارة المنتجات والمخزون</p>
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
-      <ProductTable products={[]} />
+      <ProductCatalogue products={[]} />
       <SalesHistory sales={[]} />
     </main>
   );
