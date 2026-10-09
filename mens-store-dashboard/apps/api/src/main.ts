@@ -9,6 +9,7 @@ import { createStockService } from './modules/inventory/stock.js';
 import { createInventoryMovementService } from './modules/inventory/movement.js';
 import { createCustomerService } from './modules/parties/customer.js';
 import { createSupplierService } from './modules/parties/supplier.js';
+import { createPurchaseService } from './modules/purchasing/service.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
 import { createReturnRevisionService } from './modules/sales/return-revision-service.js';
@@ -149,6 +150,27 @@ const supplierService = createSupplierService({
   },
   async create(supplier) {
     return prisma.supplier.create({ data: supplier });
+  }
+});
+
+const purchaseService = createPurchaseService({
+  async findByIdempotencyKey(organizationId, idempotencyKey) {
+    const purchase = await prisma.purchase.findUnique({ where: { organizationId_idempotencyKey: { organizationId, idempotencyKey } } });
+    return purchase && { id: purchase.id, organizationId: purchase.organizationId, supplierId: purchase.supplierId, warehouseId: purchase.warehouseId, subtotal: purchase.subtotal.toFixed(4), total: purchase.total.toFixed(4), occurredAt: purchase.occurredAt };
+  },
+  async findSupplier(id, organizationId) { return prisma.supplier.findFirst({ where: { id, organizationId } }); },
+  async findWarehouse(id, organizationId) { return prisma.warehouse.findFirst({ where: { id, organizationId } }); },
+  async findProducts(ids, organizationId) { const products = await prisma.product.findMany({ where: { id: { in: ids }, organizationId } }); return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) })); },
+  async findProductsByBarcodes(barcodes, organizationId) { const products = await prisma.product.findMany({ where: { barcode: { in: barcodes }, organizationId } }); return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) })); },
+  async post(command) {
+    return prisma.$transaction(async (transaction) => {
+      const purchase = await transaction.purchase.create({ data: { id: command.id, organizationId: command.organizationId, supplierId: command.input.supplierId, warehouseId: command.input.warehouseId, actorUserId: command.actorUserId, idempotencyKey: command.idempotencyKey, subtotal: command.calculated.subtotal, total: command.calculated.total, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line, index) => { const product = command.products.get(line.productId)!; return { id: crypto.randomUUID(), lineNumber: index + 1, productId: line.productId, productName: product.name, sku: product.sku, barcode: product.barcode, quantity: line.quantity, unitCost: line.unitCost, total: line.total }; }) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
+      await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, type: 'PURCHASE_RECEIPT', quantity: line.quantity, referenceType: 'Purchase', referenceId: purchase.id, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'PURCHASE_PAYMENT', paymentMethod: payment.method, amount: payment.amount, sourceType: 'Purchase', sourceId: purchase.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
+      await transaction.supplierLedgerEntry.createMany({ data: command.input.payments.filter((payment) => payment.method === 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, supplierId: command.input.supplierId, type: 'PURCHASE_CREDIT', amount: payment.amount, sourceType: 'Purchase', sourceId: purchase.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
+      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'PURCHASE_POSTED', entityType: 'Purchase', entityId: purchase.id } });
+      return { id: purchase.id, organizationId: purchase.organizationId, supplierId: purchase.supplierId, warehouseId: purchase.warehouseId, subtotal: purchase.subtotal.toFixed(4), total: purchase.total.toFixed(4), occurredAt: purchase.occurredAt };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 });
 
@@ -380,4 +402,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService);
