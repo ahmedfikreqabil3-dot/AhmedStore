@@ -16,8 +16,8 @@ revision, return, stock, supplier-ledger, treasury, and audit controls.
 - `POST /api/v1/purchase-returns` accepts original purchase-line IDs and split
   `SUPPLIER_CREDIT` / `TREASURY_REFUND` settlements whose exact sum must equal
   the calculated return value.
-- The browser scanner now loads real authenticated products, but no purchase
-  read-model endpoint exists for selecting a posted purchase and its lines.
+- The browser scanner and purchase selector load real authenticated products
+  and organization-scoped posted purchase documents and lines.
 
 ## Delivery sequence
 
@@ -46,14 +46,14 @@ Acceptance criteria:
 Exit criteria: the React client can select a real posted purchase and line(s)
 without manually entering identifiers.
 
-**Implemented API foundation:** `GET /api/v1/purchases` returns a deterministic,
+**Implemented:** `GET /api/v1/purchases` returns a deterministic,
 bounded (100-record) organization-scoped document list, and `GET
 /api/v1/purchases/:purchaseId` returns the persisted immutable line snapshots.
 Both endpoints require `purchases:manage`; missing documents return `404`; and
 the composition layer returns `503` if the read service is not configured. The
-React selector now loads these real documents and immutable line snapshots, and
-does not permit selecting a voided purchase. The next step is the status-aware
-return/revision editor.
+React selector now loads these real documents and immutable line snapshots,
+does not permit selecting a voided purchase, and opens its purchase-return
+panel only for a selected posted document.
 
 ### 4B — purchase entry and revision
 
@@ -99,6 +99,17 @@ Acceptance criteria:
 
 Exit criteria: a purchase return is selectable, auditable, and cannot create a
 partial financial or inventory outcome in the UI.
+
+**Implemented UI foundation:** a purchasing user selects a posted purchase and
+enters one or more original-line quantities, a mandatory reason, supplier
+credit, and/or a treasury refund payment method and amount. The browser uses
+fixed four-decimal integer units for its preview and settlement-equality check;
+it disables submission for excess original quantities or unmatched settlement
+totals. It posts only purchase-line IDs and user-entered quantities to the
+existing idempotent atomic endpoint, which remains authoritative for cumulative
+return limits, stock availability, supplier/treasury movements, and rollback.
+Success, mismatch, and failed-post paths are covered in the React suite. A
+dedicated supplier/treasury balance refresh view remains reporting work.
 
 ## Production considerations
 
