@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, CategoryImportPanel, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadSalesHistory } from './App.js';
+import { App, CategoryImportPanel, HistoricalInventory, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadHistoricalStock, loadInventoryOptions, loadSalesHistory } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -181,4 +181,23 @@ describe('App', () => {
     const file = new File(['xlsx'], 'categories.xlsx'); vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     await expect(categoryImportActions.downloadTemplate()).rejects.toThrow('CATEGORY_IMPORT_500'); await expect(categoryImportActions.preview(file)).rejects.toThrow('CATEGORY_PREVIEW_500'); await expect(categoryImportActions.import(file)).rejects.toThrow('CATEGORY_IMPORT_500');
   });
+
+  it('loads inventory options and branch-scoped historical stock from the API', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ products: [{ id: 'product-1', name: 'قميص' }] }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ warehouses: [{ id: 'branch-1', name: 'الرئيسي' }] }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ quantity: '7.0000' }) }); vi.stubGlobal('fetch', fetchMock);
+    await expect(loadInventoryOptions()).resolves.toEqual({ products: [{ id: 'product-1', name: 'قميص' }], branches: [{ id: 'branch-1', name: 'الرئيسي' }] }); await expect(loadHistoricalStock('product 1', 'branch/1', '2026-10-09')).resolves.toBe('7.0000'); expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('branchId=branch%2F1'), { credentials: 'include' });
+  });
+
+  it('rejects unavailable inventory option and historical-stock responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: false, status: 403 })); await expect(loadInventoryOptions()).rejects.toThrow('INVENTORY_OPTIONS_UNAVAILABLE'); await expect(loadInventoryOptions()).rejects.toThrow('INVENTORY_OPTIONS_UNAVAILABLE'); await expect(loadHistoricalStock('product', 'branch', '2026-10-09')).rejects.toThrow('STOCK_403');
+  });
+
+  it('filters historical inventory by selected product, branch, and date', async () => {
+    const stock = vi.fn().mockResolvedValue('5.0000'); render(<HistoricalInventory loadOptions={async () => ({ products: [{ id: 'product-1', name: 'قميص' }], branches: [{ id: 'branch-1', name: 'الرئيسي' }] })} loadStock={stock} />); await screen.findByRole('button', { name: 'عرض الرصيد' }); fireEvent.change(screen.getByLabelText('منتج المخزون'), { target: { value: 'product-1' } }); fireEvent.change(screen.getByLabelText('فرع المخزون'), { target: { value: 'branch-1' } }); fireEvent.change(screen.getByLabelText('تاريخ المخزون'), { target: { value: '2026-10-09' } }); fireEvent.click(screen.getByRole('button', { name: 'عرض الرصيد' })); expect(await screen.findByText('الرصيد: 5.0000')).toBeInTheDocument(); expect(stock).toHaveBeenCalledWith('product-1', 'branch-1', '2026-10-09');
+  });
+
+  it('explains option-loading and stock-loading failures without showing stale balance', async () => {
+    const view = render(<HistoricalInventory loadOptions={async () => { throw Error('offline'); }} />); expect(await screen.findByRole('status')).toHaveTextContent('تعذر تحميل المنتجات والفروع'); view.rerender(<HistoricalInventory loadOptions={async () => ({ products: [{ id: 'product-1', name: 'قميص' }], branches: [{ id: 'branch-1', name: 'الرئيسي' }] })} loadStock={async () => { throw Error('offline'); }} />); await screen.findByLabelText('منتج المخزون'); fireEvent.change(screen.getByLabelText('منتج المخزون'), { target: { value: 'product-1' } }); fireEvent.change(screen.getByLabelText('فرع المخزون'), { target: { value: 'branch-1' } }); fireEvent.change(screen.getByLabelText('تاريخ المخزون'), { target: { value: '2026-10-09' } }); fireEvent.click(screen.getByRole('button', { name: 'عرض الرصيد' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تحميل الرصيد التاريخي');
+  });
+
+  it('does not update unmounted inventory options after a late load', async () => { let resolve!: (value: { products: []; branches: [] }) => void; const view = render(<HistoricalInventory loadOptions={() => new Promise((done) => { resolve = done; })} />); view.unmount(); resolve({ products: [], branches: [] }); await Promise.resolve(); });
 });
