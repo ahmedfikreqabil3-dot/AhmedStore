@@ -7,13 +7,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
 
 describe('App', () => {
-  it('renders the Arabic product-management shell and an empty state', async () => {
-    render(<App loadSales={emptySales} />);
+  it('renders the Arabic product-management shell without requesting protected data before login', async () => {
+    const loadSales = vi.fn(emptySales);
+    render(<App loadSales={loadSales} />);
 
     expect(screen.getByRole('heading', { name: 'أحمد ستور' })).toBeInTheDocument();
     expect(screen.getByText('إدارة المنتجات والمخزون')).toBeInTheDocument();
-    expect(screen.getByText('جارٍ تحميل كتالوج المنتجات…')).toBeInTheDocument();
-    expect(await screen.findByText('اختر فاتورة لعرض تفاصيلها.')).toBeInTheDocument();
+    expect(screen.getByText('سجّل الدخول للوصول إلى العمليات والبيانات المحمية.')).toBeInTheDocument();
+    expect(loadSales).not.toHaveBeenCalled();
   });
 
   it('logs in through the secure session endpoint and reloads the app session', async () => {
@@ -130,9 +131,10 @@ describe('App', () => {
     expect(input).toHaveValue('');
   });
 
-  it('keeps the catalogue shell scanner callback usable', () => {
-    render(<App loadSales={emptySales} />);
-    const input = screen.getByLabelText('باركود المشتريات');
+  it('keeps the catalogue shell scanner callback usable after login', async () => {
+    render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={emptySales} />);
+    fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'password' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
+    const input = await screen.findByLabelText('باركود المشتريات');
     fireEvent.change(input, { target: { value: 'PREVIEW-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة المنتج' }));
     expect(input).toHaveValue('');
@@ -145,8 +147,9 @@ describe('App', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/sales?limit=50&offset=0', { credentials: 'include' });
   });
 
-  it('shows a clear error when the sales history cannot be loaded', async () => {
-    render(<App loadSales={async () => { throw Error('unauthorized'); }} />);
+  it('shows a clear error when the authenticated sales history cannot be loaded', async () => {
+    render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={async () => { throw Error('unauthorized'); }} />);
+    fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'password' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تحميل سجل المبيعات');
   });
 
@@ -155,9 +158,11 @@ describe('App', () => {
     await expect(loadSalesHistory()).rejects.toThrow('SALES_HISTORY_401');
   });
 
-  it('does not update an unmounted sales-history screen after a late response', async () => {
+  it('does not update an unmounted authenticated sales-history screen after a late response', async () => {
     let resolve!: (value: { sales: []; total: number }) => void;
-    const view = render(<App loadSales={() => new Promise((done) => { resolve = done; })} />);
+    const view = render(<App login={async () => ({ id: 'user-1', name: 'أحمد', email: 'ahmed@example.com', role: 'ADMIN' })} loadSales={() => new Promise((done) => { resolve = done; })} />);
+    fireEvent.change(screen.getByLabelText('معرّف المؤسسة'), { target: { value: 'organization-1' } }); fireEvent.change(screen.getByLabelText('البريد الإلكتروني'), { target: { value: 'ahmed@example.com' } }); fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'password' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
     view.unmount();
     resolve({ sales: [], total: 0 });
     await Promise.resolve();

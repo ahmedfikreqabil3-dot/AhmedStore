@@ -158,14 +158,15 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [sessionVersion, setSessionVersion] = useState(0); const [user, setUser] = useState<SignedInUser | null>(null);
   const [sales, setSales] = useState<SalesHistoryRow[]>([]);
-  const [salesLoading, setSalesLoading] = useState(true);
+  const [salesLoading, setSalesLoading] = useState(false);
   const [salesError, setSalesError] = useState<string | null>(null);
   useEffect(() => {
+    if (!user) { setSales([]); setSalesLoading(false); setSalesError(null); return; }
     let active = true;
     setSalesLoading(true); setSalesError(null);
     void loadSales().then((page) => { if (active) setSales(page.sales); }).catch(() => { if (active) setSalesError('تعذر تحميل سجل المبيعات. سجّل الدخول ثم أعد المحاولة.'); }).finally(() => { if (active) setSalesLoading(false); });
     return () => { active = false; };
-  }, [loadSales, sessionVersion]);
+  }, [loadSales, user]);
   return (
     <main dir="rtl" lang="ar">
       <h1>أحمد ستور</h1>
@@ -173,7 +174,7 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
       {user ? <p role="status">مرحباً، {user.name}</p> : <LoginPanel login={login} onSuccess={(signedInUser) => { setUser(signedInUser); setSessionVersion((value) => value + 1); }} />}
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
-      <div key={sessionVersion}><ShiftPanel /><LoadedProductCatalogue /><CategoryImportPanel actions={categoryImport} /><HistoricalInventory />{salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}<PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} /></div>
+      {user ? <div key={sessionVersion}><ShiftPanel /><LoadedProductCatalogue /><CategoryImportPanel actions={categoryImport} /><HistoricalInventory />{salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}<PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} /></div> : <p role="status">سجّل الدخول للوصول إلى العمليات والبيانات المحمية.</p>}
     </main>
   );
 }

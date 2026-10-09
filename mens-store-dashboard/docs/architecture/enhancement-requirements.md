@@ -9,6 +9,9 @@ testing. No legacy screen is removed merely because a replacement is scaffolded.
 The React shell includes an authenticated login form backed by the Fastify session
 endpoint. A successful login refreshes API-backed operational panels so catalogue,
 inventory, and reporting data are requested under the new secure browser session.
+Before authentication, those panels are not mounted and their API calls are not
+made. This prevents unauthenticated error noise and accidental protected-data
+requests from the login screen.
 
 | ID | Requirement | Planned phase | Acceptance criteria |
 | --- | --- | --- | --- |
