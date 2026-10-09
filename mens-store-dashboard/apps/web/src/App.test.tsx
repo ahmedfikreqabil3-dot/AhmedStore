@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, loadSalesHistory } from './App.js';
+import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, downloadSalesHistoryXlsx, loadSalesHistory } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -136,5 +136,30 @@ describe('App', () => {
     view.unmount();
     resolve({ sales: [], total: 0 });
     await Promise.resolve();
+  });
+
+  it('downloads the native Excel export using the authenticated browser session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['xlsx']) });
+    const createObjectUrl = vi.fn().mockReturnValue('blob:history'); const revokeObjectUrl = vi.fn(); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', fetchMock); vi.stubGlobal('URL', { createObjectURL: createObjectUrl, revokeObjectURL: revokeObjectUrl });
+    await downloadSalesHistoryXlsx();
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reports/sales/export.xlsx', { credentials: 'include' }); expect(createObjectUrl).toHaveBeenCalled(); expect(click).toHaveBeenCalled(); expect(revokeObjectUrl).toHaveBeenCalledWith('blob:history');
+    click.mockRestore();
+  });
+
+  it('rejects an unsuccessful Excel export response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    await expect(downloadSalesHistoryXlsx()).rejects.toThrow('SALES_EXPORT_403');
+  });
+
+  it('prevents duplicate Excel exports and reports export errors', async () => {
+    let resolve!: () => void; const deferred = new Promise<void>((done) => { resolve = done; }); const exportFile = vi.fn(() => deferred);
+    const view = render(<SalesHistoryExport onExport={exportFile} />);
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel' }));
+    expect(screen.getByRole('button')).toBeDisabled();
+    resolve(); await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
+    view.rerender(<SalesHistoryExport onExport={async () => { throw Error('forbidden'); }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تصدير ملف Excel');
   });
 });

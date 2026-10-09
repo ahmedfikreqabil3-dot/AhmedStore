@@ -82,6 +82,21 @@ export async function loadSalesHistory(): Promise<SalesHistoryPage> {
   return { sales: body.sales.map((sale) => ({ id: sale.id, customer: sale.customerName, total: sale.total })), total: body.total };
 }
 
+export async function downloadSalesHistoryXlsx() {
+  const response = await fetch('/api/v1/reports/sales/export.xlsx', { credentials: 'include' });
+  if (!response.ok) throw Error(`SALES_EXPORT_${response.status}`);
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = objectUrl; link.download = 'sales-history.xlsx'; link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export function SalesHistoryExport({ onExport }: { onExport: () => Promise<void> }) {
+  const [exporting, setExporting] = useState(false); const [error, setError] = useState<string | null>(null);
+  async function exportFile() { setExporting(true); setError(null); try { await onExport(); } catch { setError('تعذر تصدير ملف Excel. تحقق من الصلاحيات والاتصال ثم أعد المحاولة.'); } finally { setExporting(false); } }
+  return <section aria-label="تصدير سجل المبيعات"><button type="button" onClick={exportFile} disabled={exporting}>{exporting ? 'جارٍ تجهيز ملف Excel…' : 'تصدير Excel'}</button>{error && <p role="alert">{error}</p>}</section>;
+}
+
 export function SalesHistory({ sales }: { sales: SalesHistoryRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => { if (selectedId && !sales.some((sale) => sale.id === selectedId)) setSelectedId(null); }, [sales, selectedId]);
@@ -95,7 +110,7 @@ export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id
   return <section aria-labelledby="purchase-scan-title"><h2 id="purchase-scan-title">مسح باركود المشتريات</h2><label>الباركود<input aria-label="باركود المشتريات" value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} /></label><button type="button" onClick={submit}>إضافة المنتج</button>{error && <p role="alert">{error}</p>}</section>;
 }
 
-export function App({ postSale = async () => undefined, loadSales = loadSalesHistory }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory }) {
+export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void> }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [sales, setSales] = useState<SalesHistoryRow[]>([]);
   const [salesLoading, setSalesLoading] = useState(true);
@@ -113,7 +128,7 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
       <ProductCatalogue products={[]} />
-      {salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <SalesHistory sales={sales} />}
+      {salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}
       <PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} />
     </main>
   );
