@@ -29,6 +29,14 @@ export const createSaleSchema = z.object({
 });
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
 
+export const salesExportQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  warehouseId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional()
+}).refine((query) => !query.from || !query.to || query.from <= query.to, { message: 'from must be before to' });
+export type SalesExportQuery = z.infer<typeof salesExportQuerySchema>;
+
 export const invoiceReturnLineInputSchema = z.object({
   saleLineId: z.string().uuid(),
   quantity: positiveDecimalStringSchema

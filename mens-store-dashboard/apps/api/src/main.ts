@@ -19,6 +19,7 @@ import { createNoInvoiceApprovalService, createNoInvoiceReturnService } from './
 import { createShiftTotalsService } from './modules/finance/shift-totals.js';
 import { createShiftService } from './modules/finance/shift-service.js';
 import { createExpenseService } from './modules/finance/expense-service.js';
+import { createSalesExportService } from './modules/reporting/sales-export.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -242,6 +243,14 @@ const purchaseRevisionService = createPurchaseRevisionService({
     await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'PURCHASE_REVISED', entityType: 'Purchase', entityId: original.id } });
     return { ok: true as const, purchase: { id: replacement.id, organizationId: replacement.organizationId, supplierId: replacement.supplierId, warehouseId: replacement.warehouseId, subtotal: replacement.subtotal.toFixed(4), total: replacement.total.toFixed(4), occurredAt: replacement.occurredAt } };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
+});
+
+const salesExportService = createSalesExportService({
+  async list(organizationId, query) {
+    const sales = await prisma.sale.findMany({ where: { organizationId, occurredAt: { gte: query.from, lte: query.to }, warehouseId: query.warehouseId, customerId: query.customerId }, include: { customer: true, warehouse: true, lines: true }, orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }] });
+    return sales.flatMap((sale) => sale.lines.map((line) => ({ saleId: sale.id, occurredAt: sale.occurredAt, customerName: sale.customer.name, warehouseName: sale.warehouse.name, productName: line.productName, sku: line.sku, quantity: line.quantity.toFixed(4), unitPrice: line.unitPrice.toFixed(4), discount: line.discount.toFixed(4), lineTotal: line.total.toFixed(4), invoiceTotal: sale.total.toFixed(4), status: sale.status })));
+  },
+  async audit(organizationId, actorUserId) { await prisma.auditEvent.create({ data: { organizationId, actorUserId, action: 'SALES_HISTORY_EXPORTED', entityType: 'SaleExport', entityId: crypto.randomUUID() } }); }
 });
 
 const salesService = createSalesService({
@@ -472,4 +481,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService);

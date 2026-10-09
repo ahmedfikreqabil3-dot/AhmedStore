@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Supplier, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Supplier, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -55,6 +55,7 @@ export interface PurchaseReturnService {
 export interface PurchaseRevisionService {
   revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
+export interface SalesExportService { exportCsv(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<string>; }
 
 export interface SalesService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateSaleInput): Promise<{ ok: true; sale: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
@@ -113,7 +114,7 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -405,6 +406,16 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await salesService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.sale);
+  });
+
+  app.get('/api/v1/reports/sales/export.csv', { schema: { summary: 'Export filtered sales history as one row per sale line', tags: ['Reports'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'reports:read')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const parsed = salesExportQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_SALES_EXPORT_FILTER' });
+    const csv = await salesExportService!.exportCsv(authenticated.user.organizationId, authenticated.user.id, parsed.data);
+    return reply.header('content-disposition', 'attachment; filename="sales-history.csv"').type('text/csv; charset=utf-8').send(csv);
   });
 
   app.post('/api/v1/returns', { schema: { summary: 'Post an atomic invoice-linked return with refund and stock restoration', tags: ['Sales'] } }, async (request, reply) => {
