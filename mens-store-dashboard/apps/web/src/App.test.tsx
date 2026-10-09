@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, downloadSalesHistoryXlsx, loadSalesHistory } from './App.js';
+import { App, CategoryImportPanel, ProductCatalogue, ProductTable, PurchaseBarcodeEntry, SalesHistory, SalesHistoryExport, categoryImportActions, downloadSalesHistoryXlsx, loadSalesHistory } from './App.js';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
@@ -161,5 +161,24 @@ describe('App', () => {
     view.rerender(<SalesHistoryExport onExport={async () => { throw Error('forbidden'); }} />);
     fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تصدير ملف Excel');
+  });
+
+  it('downloads the category template and sends selected files for preview and atomic import', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => url.includes('template') ? Promise.resolve({ ok: true, blob: async () => new Blob(['template']) }) : url.includes('preview') ? Promise.resolve({ ok: true, json: async () => ({ valid: true, rows: [{ row: 2, name: 'قمصان' }], errors: [] }) }) : Promise.resolve({ ok: true, json: async () => ({ imported: 1 }) })); const createObjectUrl = vi.fn().mockReturnValue('blob:template'); const revokeObjectUrl = vi.fn(); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', fetchMock); vi.stubGlobal('URL', { createObjectURL: createObjectUrl, revokeObjectURL: revokeObjectUrl });
+    render(<CategoryImportPanel actions={categoryImportActions} />); fireEvent.click(screen.getByRole('button', { name: 'تنزيل النموذج' })); await waitFor(() => expect(createObjectUrl).toHaveBeenCalled());
+    const file = new File(['xlsx'], 'categories.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); fireEvent.change(screen.getByLabelText('ملف Excel للفئات'), { target: { files: [file] } }); fireEvent.click(screen.getByRole('button', { name: 'فحص الملف' })); expect(await screen.findByRole('status')).toHaveTextContent('1 صف جاهز'); fireEvent.click(screen.getByRole('button', { name: 'استيراد الفئات' })); expect(await screen.findByRole('alert')).toHaveTextContent('تم استيراد 1 فئة'); expect(fetchMock).toHaveBeenCalledWith('/api/v1/categories/import.xlsx', expect.objectContaining({ body: file })); click.mockRestore();
+  });
+
+  it('shows validation and transport errors and prevents import without a valid preview', async () => {
+    const file = new File(['xlsx'], 'categories.xlsx'); const actions = { downloadTemplate: async () => { throw Error('offline'); }, preview: async () => { throw Error('bad'); }, import: async () => { throw Error('bad'); } };
+    const view = render(<CategoryImportPanel actions={actions} />); fireEvent.change(screen.getByLabelText('ملف Excel للفئات'), { target: { files: [] } }); expect(screen.getByRole('button', { name: 'فحص الملف' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'تنزيل النموذج' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تنزيل النموذج'); fireEvent.change(screen.getByLabelText('ملف Excel للفئات'), { target: { files: [file] } }); fireEvent.click(screen.getByRole('button', { name: 'فحص الملف' })); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('تعذر فحص ملف Excel'));
+    view.rerender(<CategoryImportPanel actions={{ ...actions, preview: async () => ({ valid: false, rows: [], errors: [{ row: 2, message: 'INVALID_NAME' }] }) }} />); fireEvent.change(screen.getByLabelText('ملف Excel للفئات'), { target: { files: [file] } }); fireEvent.click(screen.getByRole('button', { name: 'فحص الملف' })); expect(await screen.findByRole('alert')).toHaveTextContent('صف 2: INVALID_NAME'); expect(screen.getByRole('button', { name: 'استيراد الفئات' })).toBeDisabled();
+    view.rerender(<CategoryImportPanel actions={{ ...actions, preview: async () => ({ valid: true, rows: [{ row: 2, name: 'قمصان' }], errors: [] }) }} />); fireEvent.change(screen.getByLabelText('ملف Excel للفئات'), { target: { files: [file] } }); fireEvent.click(screen.getByRole('button', { name: 'فحص الملف' })); await screen.findByRole('status'); fireEvent.click(screen.getByRole('button', { name: 'استيراد الفئات' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر استيراد الفئات');
+  });
+
+  it('rejects failed template, preview, and import API responses', async () => {
+    const file = new File(['xlsx'], 'categories.xlsx'); vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    await expect(categoryImportActions.downloadTemplate()).rejects.toThrow('CATEGORY_IMPORT_500'); await expect(categoryImportActions.preview(file)).rejects.toThrow('CATEGORY_PREVIEW_500'); await expect(categoryImportActions.import(file)).rejects.toThrow('CATEGORY_IMPORT_500');
   });
 });

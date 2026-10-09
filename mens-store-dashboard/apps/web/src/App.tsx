@@ -91,6 +91,25 @@ export async function downloadSalesHistoryXlsx() {
   URL.revokeObjectURL(objectUrl);
 }
 
+export type CategoryImportPreview = { valid: boolean; rows: Array<{ row: number; name: string }>; errors: Array<{ row: number; message: string }> };
+export type CategoryImportActions = { downloadTemplate: () => Promise<void>; preview: (file: File) => Promise<CategoryImportPreview>; import: (file: File) => Promise<number> };
+
+async function downloadWorkbook(url: string, filename: string) { const response = await fetch(url, { credentials: 'include' }); if (!response.ok) throw Error(`CATEGORY_IMPORT_${response.status}`); const objectUrl = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = objectUrl; link.download = filename; link.click(); URL.revokeObjectURL(objectUrl); }
+export const categoryImportActions: CategoryImportActions = {
+  downloadTemplate: () => downloadWorkbook('/api/v1/categories/import-template.xlsx', 'category-import-template.xlsx'),
+  async preview(file) { const response = await fetch('/api/v1/categories/import.xlsx/preview', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: file }); if (!response.ok) throw Error(`CATEGORY_PREVIEW_${response.status}`); return response.json() as Promise<CategoryImportPreview>; },
+  async import(file) { const response = await fetch('/api/v1/categories/import.xlsx', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: file }); if (!response.ok) throw Error(`CATEGORY_IMPORT_${response.status}`); return (await response.json() as { imported: number }).imported; }
+};
+
+export function CategoryImportPanel({ actions }: { actions: CategoryImportActions }) {
+  const [file, setFile] = useState<File | null>(null); const [preview, setPreview] = useState<CategoryImportPreview | null>(null); const [busy, setBusy] = useState(false); const [message, setMessage] = useState<string | null>(null);
+  async function download() { setBusy(true); setMessage(null); try { await actions.downloadTemplate(); } catch { setMessage('تعذر تنزيل النموذج.'); } finally { setBusy(false); } }
+  function choose(selected: File | null) { setFile(selected); setPreview(null); setMessage(null); }
+  async function validate() { const selectedFile = file!; setBusy(true); setMessage(null); try { const result = await actions.preview(selectedFile); setPreview(result); } catch { setMessage('تعذر فحص ملف Excel.'); } finally { setBusy(false); } }
+  async function apply() { const selectedFile = file!; setBusy(true); setMessage(null); try { const imported = await actions.import(selectedFile); setMessage(`تم استيراد ${imported} فئة بنجاح.`); setFile(null); setPreview(null); } catch { setMessage('تعذر استيراد الفئات. لم يتم حفظ أي تغيير.'); } finally { setBusy(false); } }
+  return <section aria-labelledby="category-import-title"><h2 id="category-import-title">استيراد الفئات من Excel</h2><button type="button" onClick={download} disabled={busy}>تنزيل النموذج</button><label>ملف Excel<input aria-label="ملف Excel للفئات" type="file" accept=".xlsx" disabled={busy} onChange={(event) => choose(event.currentTarget.files?.[0] ?? null)} /></label><button type="button" onClick={validate} disabled={!file || busy}>فحص الملف</button>{preview && <p role={preview.valid ? 'status' : 'alert'}>{preview.valid ? `${preview.rows.length} صف جاهز للاستيراد.` : preview.errors.map((error) => `صف ${error.row}: ${error.message}`).join('، ')}</p>}<button type="button" onClick={apply} disabled={!preview?.valid || busy}>استيراد الفئات</button>{message && <p role="alert">{message}</p>}</section>;
+}
+
 export function SalesHistoryExport({ onExport }: { onExport: () => Promise<void> }) {
   const [exporting, setExporting] = useState(false); const [error, setError] = useState<string | null>(null);
   async function exportFile() { setExporting(true); setError(null); try { await onExport(); } catch { setError('تعذر تصدير ملف Excel. تحقق من الصلاحيات والاتصال ثم أعد المحاولة.'); } finally { setExporting(false); } }
@@ -110,7 +129,7 @@ export function PurchaseBarcodeEntry({ products, onAdd }: { products: Array<{ id
   return <section aria-labelledby="purchase-scan-title"><h2 id="purchase-scan-title">مسح باركود المشتريات</h2><label>الباركود<input aria-label="باركود المشتريات" value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} /></label><button type="button" onClick={submit}>إضافة المنتج</button>{error && <p role="alert">{error}</p>}</section>;
 }
 
-export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void> }) {
+export function App({ postSale = async () => undefined, loadSales = loadSalesHistory, exportSales = downloadSalesHistoryXlsx, categoryImport = categoryImportActions }: { postSale?: () => Promise<void>; loadSales?: LoadSalesHistory; exportSales?: () => Promise<void>; categoryImport?: CategoryImportActions }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [sales, setSales] = useState<SalesHistoryRow[]>([]);
   const [salesLoading, setSalesLoading] = useState(true);
@@ -128,6 +147,7 @@ export function App({ postSale = async () => undefined, loadSales = loadSalesHis
       <button type="button" onClick={() => setPaymentOpen(true)}>فتح الدفع</button>
       <SalePaymentDialog open={paymentOpen} onConfirm={postSale} onSucceeded={() => setPaymentOpen(false)} />
       <ProductCatalogue products={[]} />
+      <CategoryImportPanel actions={categoryImport} />
       {salesLoading ? <p role="status">جارٍ تحميل سجل المبيعات…</p> : salesError ? <p role="alert">{salesError}</p> : <><SalesHistory sales={sales} /><SalesHistoryExport onExport={exportSales} /></>}
       <PurchaseBarcodeEntry products={[{ id: 'preview-product', barcode: 'PREVIEW-1', name: 'منتج تجريبي' }]} onAdd={() => undefined} />
     </main>
