@@ -20,6 +20,7 @@ import { createShiftTotalsService } from './modules/finance/shift-totals.js';
 import { createShiftService } from './modules/finance/shift-service.js';
 import { createExpenseService } from './modules/finance/expense-service.js';
 import { createSalesExportService } from './modules/reporting/sales-export.js';
+import { createSalesHistoryService } from './modules/sales/history-service.js';
 
 const prisma = new PrismaClient();
 function toPostedSale(sale: { id: string; organizationId: string; customerId: string; warehouseId: string; subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal; occurredAt: Date }): PostedSale {
@@ -253,6 +254,17 @@ const salesExportService = createSalesExportService({
   async audit(organizationId, actorUserId) { await prisma.auditEvent.create({ data: { organizationId, actorUserId, action: 'SALES_HISTORY_EXPORTED', entityType: 'SaleExport', entityId: crypto.randomUUID() } }); }
 });
 
+const salesHistoryService = createSalesHistoryService({
+  async list(organizationId, query) {
+    const where = { organizationId, occurredAt: { gte: query.from, lte: query.to }, warehouseId: query.warehouseId, customerId: query.customerId };
+    const sales = await prisma.sale.findMany({ where, include: { customer: true, warehouse: true }, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], skip: query.offset, take: query.limit });
+    return sales.map((sale) => ({ id: sale.id, customerName: sale.customer.name, warehouseName: sale.warehouse.name, total: sale.total.toFixed(4), status: sale.status, occurredAt: sale.occurredAt }));
+  },
+  async count(organizationId, query) {
+    return prisma.sale.count({ where: { organizationId, occurredAt: { gte: query.from, lte: query.to }, warehouseId: query.warehouseId, customerId: query.customerId } });
+  }
+});
+
 const salesService = createSalesService({
   async findByIdempotencyKey(organizationId, idempotencyKey) {
     const sale = await prisma.sale.findFirst({ where: { organizationId, idempotencyKey } });
@@ -481,4 +493,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService, purchaseService, purchaseReturnService, purchaseRevisionService, salesExportService, salesHistoryService);

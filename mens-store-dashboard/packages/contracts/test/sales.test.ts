@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInvoiceReturnSchema, createNoInvoiceReturnSchema, createSaleSchema, salesExportQuerySchema } from '../src/sales.js';
+import { createInvoiceReturnSchema, createNoInvoiceReturnSchema, createSaleSchema, salesExportQuerySchema, salesHistoryQuerySchema } from '../src/sales.js';
 
 const line = { productId: '63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f', quantity: '1.0000', unitPrice: '100.0000', discount: '0.0000' };
 
@@ -28,5 +28,9 @@ describe('sales contracts', () => {
   it('accepts bounded sales export filters and rejects a reversed date range', () => {
     expect(salesExportQuerySchema.parse({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-02T00:00:00.000Z', warehouseId: 'a0ac2c74-c66c-4a28-b658-34c88db36e8a' }).warehouseId).toBe('a0ac2c74-c66c-4a28-b658-34c88db36e8a');
     expect(salesExportQuerySchema.safeParse({ from: '2026-01-03T00:00:00.000Z', to: '2026-01-02T00:00:00.000Z' }).success).toBe(false);
+    expect(salesHistoryQuerySchema.parse({}).limit).toBe(50);
+    expect(salesHistoryQuerySchema.parse({ limit: '100', offset: '3' })).toMatchObject({ limit: 100, offset: 3 });
+    expect(salesHistoryQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(salesHistoryQuerySchema.safeParse({ from: '2026-01-03T00:00:00.000Z', to: '2026-01-02T00:00:00.000Z' }).success).toBe(false);
   });
 });

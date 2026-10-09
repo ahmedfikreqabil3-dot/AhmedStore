@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type Supplier, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, salesHistoryQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type SalesHistoryQuery, type Supplier, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
@@ -56,6 +56,7 @@ export interface PurchaseRevisionService {
   revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 export interface SalesExportService { exportCsv(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<string>; }
+export interface SalesHistoryService { list(organizationId: string, query: SalesHistoryQuery): Promise<{ sales: Array<{ id: string; customerName: string; warehouseName: string; total: string; status: 'POSTED' | 'VOIDED'; occurredAt: Date }>; total: number; limit: number; offset: number }>; }
 
 export interface SalesService {
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateSaleInput): Promise<{ ok: true; sale: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
@@ -114,7 +115,7 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService) {
   const app = Fastify({ logger: false });
 
   await app.register(swagger, {
@@ -406,6 +407,16 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await salesService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.sale);
+  });
+
+  app.get('/api/v1/sales', { schema: { summary: 'List a bounded, organization-scoped sales history', tags: ['Sales'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'reports:read')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!salesHistoryService) return reply.code(503).send({ error: 'SALES_HISTORY_UNAVAILABLE' });
+    const parsed = salesHistoryQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_SALES_HISTORY_QUERY' });
+    return salesHistoryService.list(authenticated.user.organizationId, parsed.data);
   });
 
   app.get('/api/v1/reports/sales/export.csv', { schema: { summary: 'Export filtered sales history as one row per sale line', tags: ['Reports'] } }, async (request, reply) => {

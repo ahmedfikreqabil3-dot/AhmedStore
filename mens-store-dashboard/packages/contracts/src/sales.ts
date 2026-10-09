@@ -29,13 +29,22 @@ export const createSaleSchema = z.object({
 });
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
 
-export const salesExportQuerySchema = z.object({
+const salesFilterQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   warehouseId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional()
-}).refine((query) => !query.from || !query.to || query.from <= query.to, { message: 'from must be before to' });
+});
+
+export const salesExportQuerySchema = salesFilterQuerySchema.refine((query) => !query.from || !query.to || query.from <= query.to, { message: 'from must be before to' });
 export type SalesExportQuery = z.infer<typeof salesExportQuerySchema>;
+
+/** A bounded, filterable read model for the sales-history screen. */
+export const salesHistoryQuerySchema = salesFilterQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).refine((query) => !query.from || !query.to || query.from <= query.to, { message: 'from must be before to' });
+export type SalesHistoryQuery = z.infer<typeof salesHistoryQuerySchema>;
 
 export const invoiceReturnLineInputSchema = z.object({
   saleLineId: z.string().uuid(),
