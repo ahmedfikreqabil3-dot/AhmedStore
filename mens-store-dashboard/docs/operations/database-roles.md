@@ -10,6 +10,7 @@ For the treasury ledger and expenses, the local development role is configured w
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "TreasuryTransaction" TO ahmed_store_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "Expense" TO ahmed_store_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "Supplier", "Purchase", "PurchaseLine", "PurchasePayment", "PurchaseReturn", "PurchaseReturnLine", "SupplierLedgerEntry" TO ahmed_store_app;
 ```
 
 In staging and production, replace `ahmed_store_app` with that environment's

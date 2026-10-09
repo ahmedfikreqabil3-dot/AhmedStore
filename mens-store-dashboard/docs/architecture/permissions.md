@@ -34,6 +34,10 @@ enter a proposed valuation but cannot self-approve it. The permissions are
 `returns:submit_no_invoice` for `MANAGER`/`ADMIN` and
 `returns:approve_no_invoice` for `FINANCE`/`ADMIN`.
 
+`purchases:manage` is assigned to `WAREHOUSE`, `MANAGER`, and `ADMIN`.
+Finance remains intentionally separate from goods-receipt creation; later
+purchase payment approval will receive a distinct finance permission.
+
 ## Security acceptance checks
 
 - Anonymous requests to protected endpoints return 401.

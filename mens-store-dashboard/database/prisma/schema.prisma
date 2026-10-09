@@ -19,7 +19,11 @@ model Organization {
   products Product[]
   warehouses Warehouse[]
   customers Customer[]
+  suppliers Supplier[]
   sales Sale[]
+  purchases Purchase[]
+  purchaseReturns PurchaseReturn[]
+  supplierLedgerEntries SupplierLedgerEntry[]
   salesReturns SalesReturn[]
   inventoryTransactions InventoryTransaction[]
   treasuryTransactions TreasuryTransaction[]
@@ -71,6 +75,21 @@ enum TreasuryTransactionType {
   RETURN_REFUND
   RETURN_REFUND_REVERSAL
   EXPENSE_PAYMENT
+  PURCHASE_PAYMENT
+  PURCHASE_PAYMENT_REVERSAL
+  PURCHASE_RETURN_REFUND
+}
+
+enum PurchaseStatus {
+  POSTED
+  VOIDED
+}
+
+enum SupplierLedgerEntryType {
+  PURCHASE_CREDIT
+  PURCHASE_RETURN_CREDIT
+  SUPPLIER_PAYMENT
+  REVERSAL
 }
 
 enum ShiftStatus {
@@ -159,6 +178,8 @@ model Product {
   inventoryTransactions InventoryTransaction[]
   saleLines SaleLine[]
   returnLines ReturnLine[]
+  purchaseLines PurchaseLine[]
+  purchaseReturnLines PurchaseReturnLine[]
 
   @@unique([organizationId, sku])
   @@unique([organizationId, barcode])
@@ -177,6 +198,8 @@ model Warehouse {
   inventoryTransactions InventoryTransaction[]
   sales Sale[]
   salesReturns SalesReturn[]
+  purchases Purchase[]
+  purchaseReturns PurchaseReturn[]
 
   @@unique([organizationId, name])
   @@index([organizationId, active])
@@ -205,6 +228,27 @@ model Customer {
   @@index([organizationId, phone])
 }
 
+model Supplier {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  active         Boolean  @default(true)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  purchases      Purchase[]
+  purchaseReturns PurchaseReturn[]
+  ledgerEntries  SupplierLedgerEntry[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active, name])
+}
+
 model Sale {
   id             String     @id @default(uuid())
   organizationId String
@@ -229,6 +273,123 @@ model Sale {
   @@index([organizationId, occurredAt])
   @@index([organizationId, customerId, occurredAt])
   @@index([organizationId, warehouseId, occurredAt])
+}
+
+model Purchase {
+  id                String         @id @default(uuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouseId       String
+  warehouse         Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  actorUserId       String
+  subtotal          Decimal        @db.Decimal(19, 4)
+  total             Decimal        @db.Decimal(19, 4)
+  status            PurchaseStatus @default(POSTED)
+  replacesPurchaseId String?
+  replacesPurchase  Purchase?      @relation("PurchaseRevision", fields: [replacesPurchaseId], references: [id], onDelete: Restrict)
+  revisedBy         Purchase[]     @relation("PurchaseRevision")
+  idempotencyKey    String?
+  occurredAt        DateTime
+  createdAt         DateTime       @default(now())
+  lines             PurchaseLine[]
+  payments          PurchasePayment[]
+  returns           PurchaseReturn[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, supplierId, occurredAt])
+  @@index([organizationId, warehouseId, occurredAt])
+  @@index([organizationId, replacesPurchaseId])
+}
+
+model PurchaseLine {
+  id             String   @id @default(uuid())
+  purchaseId     String
+  purchase       Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  lineNumber     Int
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName    String
+  sku            String
+  barcode        String?
+  quantity       Decimal  @db.Decimal(19, 4)
+  unitCost       Decimal  @db.Decimal(19, 4)
+  total          Decimal  @db.Decimal(19, 4)
+  returnLines    PurchaseReturnLine[]
+
+  @@unique([purchaseId, lineNumber])
+  @@index([productId])
+}
+
+model PurchasePayment {
+  id          String        @id @default(uuid())
+  purchaseId  String
+  purchase    Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  method      PaymentMethod
+  amount      Decimal       @db.Decimal(19, 4)
+  createdAt   DateTime      @default(now())
+
+  @@index([purchaseId, method])
+}
+
+model PurchaseReturn {
+  id                String         @id @default(uuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  purchaseId        String
+  purchase          Purchase       @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouseId       String
+  warehouse         Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  actorUserId       String
+  reason            String
+  total             Decimal        @db.Decimal(19, 4)
+  status            PurchaseStatus @default(POSTED)
+  idempotencyKey    String?
+  occurredAt        DateTime
+  createdAt         DateTime       @default(now())
+  lines             PurchaseReturnLine[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, purchaseId, occurredAt])
+  @@index([organizationId, supplierId, occurredAt])
+  @@index([organizationId, warehouseId, occurredAt])
+}
+
+model PurchaseReturnLine {
+  id               String         @id @default(uuid())
+  purchaseReturnId String
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Restrict)
+  purchaseLineId   String
+  purchaseLine     PurchaseLine   @relation(fields: [purchaseLineId], references: [id], onDelete: Restrict)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity         Decimal        @db.Decimal(19, 4)
+  unitCost         Decimal        @db.Decimal(19, 4)
+  total            Decimal        @db.Decimal(19, 4)
+
+  @@index([purchaseLineId])
+  @@index([productId])
+}
+
+model SupplierLedgerEntry {
+  id             String                  @id @default(uuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplierId     String
+  supplier       Supplier                @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  type           SupplierLedgerEntryType
+  amount         Decimal                 @db.Decimal(19, 4)
+  sourceType     String
+  sourceId       String
+  actorUserId    String
+  occurredAt     DateTime
+  createdAt      DateTime                @default(now())
+
+  @@index([organizationId, supplierId, occurredAt])
+  @@index([organizationId, sourceType, sourceId])
 }
 
 model SaleLine {

@@ -9,5 +9,7 @@ describe('role authorization', () => {
     expect(can('MANAGER', 'returns:approve_no_invoice')).toBe(false);
     expect(can('MANAGER', 'returns:submit_no_invoice')).toBe(true);
     expect(can('CASHIER', 'returns:submit_no_invoice')).toBe(false);
+    expect(can('WAREHOUSE', 'purchases:manage')).toBe(true);
+    expect(can('FINANCE', 'purchases:manage')).toBe(false);
   });
 });
