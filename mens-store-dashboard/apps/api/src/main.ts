@@ -8,6 +8,7 @@ import { createWarehouseService } from './modules/catalogue/warehouse.js';
 import { createStockService } from './modules/inventory/stock.js';
 import { createInventoryMovementService } from './modules/inventory/movement.js';
 import { createCustomerService } from './modules/parties/customer.js';
+import { createSupplierService } from './modules/parties/supplier.js';
 import { createSalesService, type PostedSale } from './modules/sales/service.js';
 import { createInvoiceReturnService } from './modules/sales/return-service.js';
 import { createReturnRevisionService } from './modules/sales/return-revision-service.js';
@@ -139,6 +140,15 @@ const customerService = createCustomerService({
   async create(customer) {
     const created = await prisma.customer.create({ data: customer });
     return { ...created, creditLimit: created.creditLimit.toFixed(4) };
+  }
+});
+
+const supplierService = createSupplierService({
+  async list(organizationId) {
+    return prisma.supplier.findMany({ where: { organizationId, active: true }, orderBy: { name: 'asc' } });
+  },
+  async create(supplier) {
+    return prisma.supplier.create({ data: supplier });
   }
 });
 
@@ -370,4 +380,4 @@ const shiftService = createShiftService({
   }
 }, (organizationId, openedAt, closedAt) => shiftTotalsService.summarize(organizationId, openedAt, closedAt));
 
-await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService);
+await startServer(Number(process.env.PORT ?? 3000), identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, invoiceReturnService, noInvoiceReturnService, noInvoiceApprovalService, shiftTotalsService, returnRevisionService, shiftService, expenseService, supplierService);

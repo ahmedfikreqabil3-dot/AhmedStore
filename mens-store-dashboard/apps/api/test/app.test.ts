@@ -426,4 +426,24 @@ describe('API health endpoint', () => {
     expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
     await Promise.all([finance.close(), cashier.close(), anonymous.close()]);
   });
+
+  it('lists and creates suppliers only for purchasing roles', async () => {
+    const supplier = { id: '9f112860-9eb3-402f-b722-740616412a85', organizationId: input.organizationId, name: 'Textile Importers', phone: '01012345678', email: 'orders@example.test', address: 'Cairo', notes: 'Net 30', active: true, version: 1 };
+    const suppliers = { list: async () => [supplier], create: async () => ({ ok: true as const, supplier }) };
+    const warehouseAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'WAREHOUSE' as const } }) };
+    const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
+    const warehouse = await buildApp(successIdentity, warehouseAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, undefined, suppliers);
+    const cashier = await buildApp(successIdentity, cashierAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, undefined, suppliers);
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, undefined, suppliers);
+    const body = { name: supplier.name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes };
+
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/suppliers' })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'GET', url: '/api/v1/suppliers', headers: { cookie: 'session=token' } })).statusCode).toBe(403);
+    expect((await warehouse.inject({ method: 'GET', url: '/api/v1/suppliers', headers: { cookie: 'session=token' } })).json()).toEqual({ suppliers: [supplier] });
+    expect((await anonymous.inject({ method: 'POST', url: '/api/v1/suppliers', payload: body })).statusCode).toBe(401);
+    expect((await cashier.inject({ method: 'POST', url: '/api/v1/suppliers', headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(403);
+    expect((await warehouse.inject({ method: 'POST', url: '/api/v1/suppliers', headers: { cookie: 'session=token' }, payload: {} })).statusCode).toBe(400);
+    expect((await warehouse.inject({ method: 'POST', url: '/api/v1/suppliers', headers: { cookie: 'session=token' }, payload: body })).statusCode).toBe(201);
+    await Promise.all([warehouse.close(), cashier.close(), anonymous.close()]);
+  });
 });
