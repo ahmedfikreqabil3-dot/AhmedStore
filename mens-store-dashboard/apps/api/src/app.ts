@@ -55,7 +55,7 @@ export interface PurchaseReturnService {
 export interface PurchaseRevisionService {
   revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
-export interface SalesExportService { exportCsv(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<string>; }
+export interface SalesExportService { exportCsv(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<string>; exportXlsx?(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<Buffer>; }
 export interface SalesHistoryService { list(organizationId: string, query: SalesHistoryQuery): Promise<{ sales: Array<{ id: string; customerName: string; warehouseName: string; total: string; status: 'POSTED' | 'VOIDED'; occurredAt: Date }>; total: number; limit: number; offset: number }>; }
 
 export interface SalesService {
@@ -427,6 +427,17 @@ export async function buildApp(identityService: IdentityService, authenticationS
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_SALES_EXPORT_FILTER' });
     const csv = await salesExportService!.exportCsv(authenticated.user.organizationId, authenticated.user.id, parsed.data);
     return reply.header('content-disposition', 'attachment; filename="sales-history.csv"').type('text/csv; charset=utf-8').send(csv);
+  });
+
+  app.get('/api/v1/reports/sales/export.xlsx', { schema: { summary: 'Export filtered sales history as an Excel workbook', tags: ['Reports'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'reports:read')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!salesExportService?.exportXlsx) return reply.code(503).send({ error: 'SALES_EXCEL_EXPORT_UNAVAILABLE' });
+    const parsed = salesExportQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_SALES_EXPORT_FILTER' });
+    const workbook = await salesExportService.exportXlsx(authenticated.user.organizationId, authenticated.user.id, parsed.data);
+    return reply.header('content-disposition', 'attachment; filename="sales-history.xlsx"').type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(workbook);
   });
 
   app.post('/api/v1/returns', { schema: { summary: 'Post an atomic invoice-linked return with refund and stock restoration', tags: ['Sales'] } }, async (request, reply) => {
