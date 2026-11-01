@@ -1,5 +1,9 @@
 # Phase 4 — purchasing workflow UI
 
+These PUR-* steps describe purchasing slices, not the global 4A–4F workstreams
+in delivery-plan.md. Implemented foundations below do not close unresolved
+retry/reconciliation/readiness gates; see delivery-audit-2026-10-29.md.
+
 ## Objective
 
 Complete the React purchasing workflows without allowing users to enter opaque
@@ -21,7 +25,7 @@ revision, return, stock, supplier-ledger, treasury, and audit controls.
 
 ## Delivery sequence
 
-### 4A — purchase read model
+### PUR-1 — purchase read model
 
 Add authenticated `GET /api/v1/purchases` and `GET /api/v1/purchases/:id`
 endpoints, restricted to `purchases:manage`.
@@ -55,7 +59,7 @@ React selector now loads these real documents and immutable line snapshots,
 does not permit selecting a voided purchase, and opens its purchase-return
 panel only for a selected posted document.
 
-### 4B — purchase entry and revision
+### PUR-2 — purchase entry and revision
 
 Build a purchase editor that uses the real product scanner/catalogue, supplier
 and branch selections, explicit payment allocations, and a confirmed submit.
@@ -88,7 +92,7 @@ and line snapshots and makes clear that it will void the original and submit a
 replacement through `PUT /api/v1/purchases/:purchaseId`; it never mutates a
 posted purchase in place.
 
-### 4C — purchase returns and split settlements
+### PUR-3 — purchase returns and split settlements
 
 Build a return panel from selected original lines. The panel calculates a
 preview only; the backend determines the authoritative result. It must collect

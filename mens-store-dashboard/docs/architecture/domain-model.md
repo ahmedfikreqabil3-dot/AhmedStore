@@ -31,7 +31,7 @@
 
 1. A sale succeeds only when all sale lines have sufficient stock in the selected warehouse.
 2. Payment amounts must exactly equal the final sale total, except for approved change-handling rules.
-3. A credit sale requires an eligible customer and writes a customer-ledger entry.
+3. A credit sale requires an eligible customer and writes a customer-ledger entry. Owner decision (2026-10-30): a credit limit of zero means unlimited credit; a positive limit caps the customer's resulting outstanding balance. Implement this with the customer-ledger transaction, including concurrency and original-key replay checks.
 4. A return references original sale lines and cannot exceed remaining returnable quantity.
 5. A stock transfer posts paired `TRANSFER_OUT` and `TRANSFER_IN` movements in one transaction.
 6. Purchase receipt posts stock only once; retries must reuse an idempotency key.

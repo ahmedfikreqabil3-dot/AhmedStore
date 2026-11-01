@@ -1,0 +1,54 @@
+/* Phase 4A: shared by the approved preview and live operations. */
+.design-preview{--text-secondary:#52637a;--text-muted:#596b80}
+.design-preview .page-heading p,.design-preview .panel-heading p,.design-preview .section-title p,
+.design-preview .metric-label,.design-preview .metric>small,.design-preview .field>span,
+.design-preview .customer-heading,.design-preview .customer-meta,.design-preview .payment-label,
+.design-preview .product-cell small,.design-preview .invoice-count,.design-preview .quiet-hint,
+.design-preview .table-context,.design-preview .table-footer,.design-preview .muted,
+.design-preview .operational-content label,.design-preview .operational-content p,
+.design-preview .catalogue-table-wrap td small,.design-preview .catalogue-pagination,
+.design-preview .modal-description,.design-preview .payment-preview-amount>span,
+.design-preview .login-form-wrap>p,.design-preview .login-form-footer{color:var(--text-secondary)}
+.design-preview .page-heading p,.design-preview .panel-heading p,.design-preview .section-title p,
+.design-preview .field>span,.design-preview .customer-heading,.design-preview .customer-meta,
+.design-preview .payment-label,.design-preview .invoice-count,.design-preview .quiet-hint,
+.design-preview .table-footer,.design-preview .table-context,.design-preview .metric>small,
+.design-preview .product-cell small,.design-preview .operational-content label,
+.design-preview .operational-content p,.design-preview .catalogue-table-wrap td small,
+.design-preview .modal-description,.design-preview .login-form-footer{font-size:12px;line-height:1.85}
+.design-preview .metric-label,.design-preview .summary-line,.design-preview .field input,
+.design-preview .field select,.design-preview .product-search input{font-size:14px}
+.design-preview .data-table,.design-preview .cart-table td,
+.design-preview .operational-content td{font-size:14px}
+.design-preview .data-table th,.design-preview .operational-content th{font-size:12px;color:var(--text-secondary);font-weight:600}
+.design-preview .data-table td,.design-preview .operational-content td{padding-block:19px}
+.design-preview .product-cell strong{font-size:14px}
+.design-preview .numeric,.design-preview bdi,.design-preview .stock-cell{font-variant-numeric:tabular-nums}
+.design-preview .button,.design-preview .table-link{font-size:13px;min-height:44px}
+.design-preview .icon-button{min-width:36px;min-height:36px}
+.design-preview .field input,.design-preview .field select{min-height:44px}
+.design-preview input::placeholder,.design-preview textarea::placeholder{color:var(--text-muted);opacity:1}
+.design-preview .branch-context{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 15px;border:1px solid #bddbd4;border-radius:9px;background:#e6f4f1;color:#24594f;font-size:13px;line-height:1.8;margin-bottom:16px}
+.design-preview .branch-context strong{color:#172b4d;overflow-wrap:anywhere}
+.design-preview .checkout-branch-context{margin:0 22px 18px}
+.design-preview .checkout-content>.branch-context{grid-column:1/-1}
+.design-preview .branch-context-label{font-size:12px;color:#52637a}
+.design-preview .checkout-error{margin:0 22px 20px}
+.design-preview .catalogue-hint{padding:11px 14px;border-inline-start:3px solid #0f766e;background:#f0f7f5;border-radius:6px}
+.design-preview .table-context{background:#f0f7f5;color:#24594f}
+.design-preview :is(button,a,input,select,textarea,summary):focus-visible{outline:3px solid #0f766e;outline-offset:3px}
+.design-preview .sidebar a:focus-visible{outline-color:#b2e0d4}
+@media(max-width:760px){
+  .design-preview .data-table,.design-preview .cart-table td,.design-preview .operational-content td{font-size:13px}
+  .design-preview .product-cell strong{font-size:13px}
+  .design-preview .nav-item{font-size:12px;min-height:44px}
+  .design-preview .checkout-branch-context,.design-preview .checkout-error{margin-inline:18px}
+}
+@media(max-width:480px){
+  .design-preview .icon-button{min-width:44px;min-height:44px}
+  .design-preview .quantity-control{height:44px}
+  .design-preview .quantity-control button{min-width:36px;min-height:42px}
+  .design-preview .live-lines input[type=number]{min-height:44px}
+  .design-preview .product-search input{font-size:16px!important}
+  .design-preview .field input,.design-preview .field select{font-size:16px!important}
+}

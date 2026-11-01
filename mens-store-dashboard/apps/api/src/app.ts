@@ -1,7 +1,23 @@
+import { createInventoryTransferSchema, inventoryTransferQuerySchema } from '@ahmed-store/contracts';
+import { publicError } from './modules/shared/public-error.js';
+import { customerSchema, partyStatementQuerySchema, type PartyStatement, type PartyStatementQuery } from '@ahmed-store/contracts';
+import { expenseHistoryQuerySchema, type ExpenseHistory, type ExpenseHistoryQuery } from '@ahmed-store/contracts';
+import { partyDirectoryQuerySchema,partyLifecycleSchema,type PartyDirectoryQuery,type PartyDirectoryResult,type PartyLifecycleInput } from '@ahmed-store/contracts';
+import {mayManageParty,type PartyLifecycleResult} from './modules/parties/lifecycle.js';
+import {registerCustomerImportRoutes} from './modules/parties/customer-import-routes.js';
+import type {createCustomerImportService} from './modules/parties/customer-import.js';
+import type { createInventoryTransferService } from './modules/inventory/transfer.js';
+import type { createStockCountService } from './modules/inventory/count.js';
+import type { createStockThresholdService } from './modules/inventory/threshold.js';
+import { setStockThresholdSchema, stockThresholdQuerySchema } from '@ahmed-store/contracts';
+import { createStockCountSchema, stockCountQuerySchema } from '@ahmed-store/contracts';
+import { updateCustomerSchema, updateSupplierSchema, type UpdateCustomerInput, type UpdateSupplierInput } from '@ahmed-store/contracts';
+import type { PartyUpdateResult } from './modules/parties/update.js';
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, salesHistoryQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type SalesHistoryQuery, type Supplier, type Warehouse } from '@ahmed-store/contracts';
+import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, productSchema, updateProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, salesHistoryQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type SalesHistoryQuery, type Supplier, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
+import type { ProductUpdateResult } from './modules/catalogue/product-update.js';
 import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
 
@@ -24,6 +40,7 @@ export interface SupplierImportService { template(): Promise<Buffer>; preview(fi
 
 export interface ProductService {
   list(organizationId: string): Promise<Product[]>;
+  update?(organizationId: string, actorUserId: string, productId: string, input: ReturnType<typeof updateProductSchema.parse>): Promise<ProductUpdateResult>;
   create(organizationId: string, input: CreateProductInput): Promise<{ ok: true; product: Product } | { ok: false; reason: 'SKU_EXISTS' | 'BARCODE_EXISTS' | 'CATEGORY_UNAVAILABLE' }>;
 }
 
@@ -37,15 +54,24 @@ export interface StockService {
 }
 
 export interface InventoryMovementService {
-  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateInventoryMovementInput): Promise<{ ok: true; movement: InventoryMovement; replayed: boolean } | { ok: false; reason: 'PRODUCT_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' }>;
+  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateInventoryMovementInput): Promise<import('./modules/inventory/movement.js').PostInventoryMovementResult>;
 }
 
 export interface CustomerService {
+  imports?:ReturnType<typeof createCustomerImportService>;
+  directory?(organizationId:string,query:PartyDirectoryQuery):Promise<PartyDirectoryResult>;
+  lifecycle?(organizationId:string,actorUserId:string,id:string,input:PartyLifecycleInput):Promise<PartyLifecycleResult>;
+  statement?(organizationId:string,partyId:string,query:PartyStatementQuery):Promise<PartyStatement|null>;
+  update?(organizationId:string,actorUserId:string,id:string,input:UpdateCustomerInput):Promise<PartyUpdateResult<Customer>>;
   list(organizationId: string): Promise<Customer[]>;
   create(organizationId: string, input: CreateCustomerInput): Promise<{ ok: true; customer: Customer }>;
 }
 
 export interface SupplierService {
+  directory?(organizationId:string,query:PartyDirectoryQuery):Promise<PartyDirectoryResult>;
+  lifecycle?(organizationId:string,actorUserId:string,id:string,input:PartyLifecycleInput):Promise<PartyLifecycleResult>;
+  statement?(organizationId:string,partyId:string,query:PartyStatementQuery):Promise<PartyStatement|null>;
+  update?(organizationId:string,actorUserId:string,id:string,input:UpdateSupplierInput):Promise<PartyUpdateResult<Supplier>>;
   list(organizationId: string): Promise<Supplier[]>;
   create(organizationId: string, input: CreateSupplierInput): Promise<{ ok: true; supplier: Supplier }>;
 }
@@ -85,7 +111,7 @@ export interface ShiftTotalsService {
 }
 
 export interface ShiftService {
-  open(organizationId: string, userId: string, openedAt: Date): Promise<{ ok: true; shift: ShiftResponse } | { ok: false; reason: 'SHIFT_ALREADY_OPEN' }>;
+  open(organizationId: string, userId: string, openedAt: Date): Promise<{ ok: true; shift: ShiftResponse } | { ok: false; reason: 'SHIFT_ALREADY_OPEN' | 'ACTOR_UNAVAILABLE' }>;
   current(organizationId: string, userId: string): Promise<ShiftResponse | null>;
   close(organizationId: string, userId: string, shiftId: string, closedAt: Date, countedCash: string, discrepancyReason: string | null): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_OWNED' | 'SHIFT_NOT_OPEN' | 'INVALID_SHIFT_PERIOD' | 'CASH_DISCREPANCY_REASON_REQUIRED' }>;
   review(organizationId: string, reviewerUserId: string, shiftId: string, reviewedAt: Date): Promise<{ ok: true; shift: ShiftResponse | null } | { ok: false; reason: 'SHIFT_NOT_FOUND' | 'SHIFT_NOT_CLOSED' }>;
@@ -100,7 +126,8 @@ export interface ReturnRevisionService {
 }
 
 export interface ExpenseService {
-  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateExpenseInput): Promise<{ ok: true; expense: { id: string; organizationId: string; category: string; description: string; paymentMethod: PaymentMethod; amount: string; occurredAt: Date }; replayed: boolean }>;
+  list?(organizationId:string,query:ExpenseHistoryQuery):Promise<ExpenseHistory>;
+  post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateExpenseInput): Promise<{ ok: true; expense: { id: string; organizationId: string; category: string; description: string; paymentMethod: PaymentMethod; amount: string; occurredAt: Date }; replayed: boolean }|{ok:false;reason:string}>;
 }
 
 function readSessionToken(cookie: string | undefined) {
@@ -120,9 +147,11 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService, categoryImportService?: CategoryImportService, productImportService?: ProductImportService, supplierImportService?: SupplierImportService) {
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService, categoryImportService?: CategoryImportService, productImportService?: ProductImportService, supplierImportService?: SupplierImportService, inventoryTransferService?: ReturnType<typeof createInventoryTransferService>, stockCountService?: ReturnType<typeof createStockCountService>, stockThresholdService?: ReturnType<typeof createStockThresholdService>) {
   const app = Fastify({ logger: false });
+  app.setErrorHandler((error,request,reply)=>{const safe=publicError(error,request.id);return reply.code(safe.statusCode).send(safe.body);});
   app.addContentTypeParser('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
+  registerCustomerImportRoutes(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:customerService.imports});
 
   await app.register(swagger, {
     openapi: {
@@ -134,6 +163,55 @@ export async function buildApp(identityService: IdentityService, authenticationS
   app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
 
   app.get('/api/v1/health', { schema: { summary: 'Service health check', tags: ['System'] } }, async () => healthResponseSchema.parse({ status: 'ok', service: 'api' }));
+
+  app.get('/api/v1/expenses',async(request,reply)=>{
+    const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if(!auth.ok)return reply.code(401).send({error:auth.reason});
+    if(!can(auth.user.role,'expenses:manage'))return reply.code(403).send({error:'FORBIDDEN'});
+    const parsed=expenseHistoryQuerySchema.safeParse(request.query);
+    if(!parsed.success)return reply.code(400).send({error:'INVALID_EXPENSE_QUERY'});
+    if(!expenseService?.list)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});
+    return expenseService.list(auth.user.organizationId,parsed.data);
+  });
+
+  for(const kind of ['customers','suppliers'] as const){
+    app.get(`/api/v1/${kind}/directory`,async(request,reply)=>{
+      const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+      if(!auth.ok)return reply.code(401).send({error:auth.reason});
+      if(!mayManageParty(auth.user.role,kind))return reply.code(403).send({error:'FORBIDDEN'});
+      const parsed=partyDirectoryQuerySchema.safeParse(request.query);
+      if(!parsed.success)return reply.code(400).send({error:'INVALID_DIRECTORY_QUERY'});
+      const service=kind==='customers'?customerService:supplierService;
+      if(!service?.directory)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});
+      return service.directory(auth.user.organizationId,parsed.data);
+    });
+    app.patch(`/api/v1/${kind}/:partyId/lifecycle`,async(request,reply)=>{
+      const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+      if(!auth.ok)return reply.code(401).send({error:auth.reason});
+      if(!mayManageParty(auth.user.role,kind))return reply.code(403).send({error:'FORBIDDEN'});
+      const id=(request.params as {partyId:string}).partyId,parsed=partyLifecycleSchema.safeParse(request.body);
+      if(!customerSchema.shape.id.safeParse(id).success||!parsed.success)return reply.code(400).send({error:'INVALID_PARTY_LIFECYCLE'});
+      const service=kind==='customers'?customerService:supplierService;
+      if(!service?.lifecycle)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});
+      const result=await service.lifecycle(auth.user.organizationId,auth.user.id,id,parsed.data);
+      if(!result.ok)return reply.code(result.reason==='PARTY_NOT_FOUND'?404:409).send({error:result.reason});
+      return result.party;
+    });
+    app.get(`/api/v1/${kind}/:partyId/statement`,async(request,reply)=>{
+      const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+      if(!auth.ok)return reply.code(401).send({error:auth.reason});
+      const permission=kind==='customers' ? 'sales:write' : 'purchases:manage';
+      if(!can(auth.user.role,permission)&&!can(auth.user.role,'reports:read'))return reply.code(403).send({error:'FORBIDDEN'});
+      const partyId=(request.params as {partyId:string}).partyId;
+      const parsed=partyStatementQuerySchema.safeParse(request.query);
+      if(!customerSchema.shape.id.safeParse(partyId).success||!parsed.success)return reply.code(400).send({error:'INVALID_STATEMENT_QUERY'});
+      const service=kind==='customers' ? customerService : supplierService;
+      if(!service?.statement)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});
+      const statement=await service.statement(auth.user.organizationId,partyId,parsed.data);
+      if(!statement)return reply.code(404).send({error:'PARTY_NOT_FOUND'});
+      return statement;
+    });
+  }
 
   app.post('/api/v1/auth/login', { schema: { summary: 'Start a session', tags: ['Authentication'] } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
@@ -225,6 +303,19 @@ export async function buildApp(identityService: IdentityService, authenticationS
     return { products: await productService.list(authenticated.user.organizationId) };
   });
 
+  app.patch('/api/v1/products/:productId', { schema: { summary: 'Update product details with optimistic concurrency and audit', tags: ['Catalogue'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const { productId } = request.params as { productId: string };
+    const parsed = updateProductSchema.safeParse(request.body);
+    if (!productSchema.shape.id.safeParse(productId).success || !parsed.success) return reply.code(400).send({ error: 'INVALID_PRODUCT' });
+    if (!productService.update) return reply.code(503).send({ error: 'PRODUCT_UPDATE_UNAVAILABLE' });
+    const result = await productService.update(authenticated.user.organizationId, authenticated.user.id, productId, parsed.data);
+    if (!result.ok) return reply.code(result.reason === 'PRODUCT_NOT_FOUND' ? 404 : 409).send({ error: result.reason });
+    return result.product;
+  });
+
   app.post('/api/v1/products', { schema: { summary: 'Create an organization product', tags: ['Catalogue'] } }, async (request, reply) => {
     const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
@@ -297,11 +388,13 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
     if (!can(authenticated.user.role, 'expenses:manage')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if(!expenseService)return reply.code(503).send({error:'EXPENSE_SERVICE_UNAVAILABLE'});
     const idempotencyKey = request.headers['idempotency-key'];
     if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return reply.code(400).send({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
     const parsed = createExpenseSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_EXPENSE' });
-    const result = await expenseService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    const result = await expenseService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
+    if(!result.ok)return reply.code(409).send({error:result.reason});
     return reply.code(result.replayed ? 200 : 201).send(result.expense);
   });
 
@@ -364,6 +457,30 @@ export async function buildApp(identityService: IdentityService, authenticationS
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
     if (!can(authenticated.user.role, 'sales:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
     return { customers: await customerService.list(authenticated.user.organizationId) };
+  });
+
+
+  app.patch('/api/v1/customers/:partyId', async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'sales:write')||!can(authenticated.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    const {partyId}=request.params as {partyId:string};const parsed=updateCustomerSchema.safeParse(request.body);
+    if(!productSchema.shape.id.safeParse(partyId).success||!parsed.success)return reply.code(400).send({error:'INVALID_CUSTOMER'});
+    if(!customerService.update)return reply.code(503).send({error:'CUSTOMER_UPDATE_UNAVAILABLE'});
+    const result=await customerService.update(authenticated.user.organizationId,authenticated.user.id,partyId,parsed.data);
+    if(!result.ok)return reply.code(result.reason==='PARTY_NOT_FOUND' ? 404 : 409).send({error:result.reason});
+    return result.party;
+  });
+  app.patch('/api/v1/suppliers/:partyId', async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'purchases:manage'))return reply.code(403).send({error:'FORBIDDEN'});
+    const {partyId}=request.params as {partyId:string};const parsed=updateSupplierSchema.safeParse(request.body);
+    if(!productSchema.shape.id.safeParse(partyId).success||!parsed.success)return reply.code(400).send({error:'INVALID_SUPPLIER'});
+    if(!supplierService?.update)return reply.code(503).send({error:'SUPPLIER_UPDATE_UNAVAILABLE'});
+    const result=await supplierService.update(authenticated.user.organizationId,authenticated.user.id,partyId,parsed.data);
+    if(!result.ok)return reply.code(result.reason==='PARTY_NOT_FOUND' ? 404 : 409).send({error:result.reason});
+    return result.party;
   });
 
   app.post('/api/v1/customers', { schema: { summary: 'Create an organization customer', tags: ['Customers'] } }, async (request, reply) => {
@@ -452,6 +569,21 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await purchaseReturnService!.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.purchaseReturn);
+  });
+
+  app.get('/api/v1/pos/options', { schema: { summary: 'Read organization sale-entry options without purchase costs', tags: ['Sales'] } }, async (request, reply) => {
+    const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
+    if (!can(authenticated.user.role, 'sales:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    const organizationId = authenticated.user.organizationId;
+    const [products, customers, warehouses] = await Promise.all([
+      productService.list(organizationId), customerService.list(organizationId), warehouseService.list(organizationId)
+    ]);
+    return {
+      products: products.filter((product) => product.active).map(({ id, name, sku, barcode, salePrice }) => ({ id, name, sku, barcode, salePrice })),
+      customers: customers.filter((customer) => customer.active).map(({ id, name }) => ({ id, name })),
+      warehouses: warehouses.filter((warehouse) => warehouse.active).map(({ id, name }) => ({ id, name }))
+    };
   });
 
   app.post('/api/v1/sales', { schema: { summary: 'Post an atomic sale with payments and stock issue movements', tags: ['Sales'] } }, async (request, reply) => {
@@ -555,5 +687,58 @@ export async function buildApp(identityService: IdentityService, authenticationS
     return result.salesReturn;
   });
 
+
+
+  app.get('/api/v1/inventory/transfers',async(request,reply)=>{
+    const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok)return reply.code(401).send({error:auth.reason});
+    if(!can(auth.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    const query=inventoryTransferQuerySchema.safeParse(request.query);if(!query.success)return reply.code(400).send({error:'INVALID_TRANSFER_QUERY'});
+    if(!inventoryTransferService)return reply.code(503).send({error:'TRANSFERS_UNAVAILABLE'});
+    return inventoryTransferService.list(auth.user.organizationId,query.data);
+  });
+  app.post('/api/v1/inventory/transfers',async(request,reply)=>{
+    const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok)return reply.code(401).send({error:auth.reason});
+    if(!can(auth.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    const key=request.headers['idempotency-key'];if(typeof key!=='string'||!key.trim()||key.length>200)return reply.code(400).send({error:'IDEMPOTENCY_KEY_REQUIRED'});
+    const parsed=createInventoryTransferSchema.safeParse(request.body);if(!parsed.success)return reply.code(400).send({error:'INVALID_TRANSFER'});
+    if(!inventoryTransferService)return reply.code(503).send({error:'TRANSFERS_UNAVAILABLE'});
+    const result=await inventoryTransferService.post(auth.user.organizationId,auth.user.id,key,parsed.data,request.id);
+    if(!result.ok)return reply.code(409).send({error:result.reason});
+    return reply.code(result.replayed ? 200 : 201).send({transfer:result.transfer,replayed:result.replayed});
+  });
+
+  app.get('/api/v1/inventory/counts',async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    if(!stockCountService)return reply.code(503).send({error:'STOCK_COUNT_UNAVAILABLE'});
+    const parsed=stockCountQuerySchema.safeParse(request.query);if(!parsed.success)return reply.code(400).send({error:'INVALID_STOCK_COUNT_QUERY'});
+    return stockCountService.list(authenticated.user.organizationId,parsed.data);
+  });
+  app.post('/api/v1/inventory/counts',async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));
+    if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    if(!stockCountService)return reply.code(503).send({error:'STOCK_COUNT_UNAVAILABLE'});
+    const key=request.headers['idempotency-key'];if(typeof key!=='string'||!key.trim()||key.length>200)return reply.code(400).send({error:'IDEMPOTENCY_KEY_REQUIRED'});
+    const parsed=createStockCountSchema.safeParse(request.body);if(!parsed.success)return reply.code(400).send({error:'INVALID_STOCK_COUNT'});
+    const result=await stockCountService.post(authenticated.user.organizationId,authenticated.user.id,key,parsed.data);
+    if(!result.ok)return reply.code(409).send({error:result.reason});
+    return reply.code(result.replayed ? 200 : 201).send({count:result.count,replayed:result.replayed});
+  });
+  app.get('/api/v1/inventory/thresholds',async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'inventory:write')&&!can(authenticated.user.role,'reports:read'))return reply.code(403).send({error:'FORBIDDEN'});
+    if(!stockThresholdService)return reply.code(503).send({error:'STOCK_THRESHOLD_UNAVAILABLE'});
+    const parsed=stockThresholdQuerySchema.safeParse(request.query);if(!parsed.success)return reply.code(400).send({error:'INVALID_STOCK_THRESHOLD_QUERY'});
+    return stockThresholdService.list(authenticated.user.organizationId,parsed.data);
+  });
+  app.put('/api/v1/inventory/thresholds',async(request,reply)=>{
+    const authenticated=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!authenticated.ok)return reply.code(401).send({error:authenticated.reason});
+    if(!can(authenticated.user.role,'inventory:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    if(!stockThresholdService)return reply.code(503).send({error:'STOCK_THRESHOLD_UNAVAILABLE'});
+    const parsed=setStockThresholdSchema.safeParse(request.body);if(!parsed.success)return reply.code(400).send({error:'INVALID_STOCK_THRESHOLD'});
+    const result=await stockThresholdService.set(authenticated.user.organizationId,authenticated.user.id,parsed.data);if(!result.ok)return reply.code(409).send({error:result.reason});return result.threshold;
+  });
   return app;
 }

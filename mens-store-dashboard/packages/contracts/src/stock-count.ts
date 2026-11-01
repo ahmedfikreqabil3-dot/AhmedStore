@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { decimalStringSchema } from './catalogue.js';
+export const signedQuantitySchema=z.string().regex(/^-?\d{1,15}(?:\.\d{1,4})?$/);
+const line=z.object({productId:z.string().uuid(),expectedQuantity:signedQuantitySchema,countedQuantity:decimalStringSchema}).strict();
+export const createStockCountSchema=z.object({warehouseId:z.string().uuid(),reason:z.string().trim().min(3).max(500),occurredAt:z.coerce.date(),lines:z.array(line).min(1).max(100)}).strict().superRefine((value,context)=>{if(new Set(value.lines.map(row=>row.productId)).size!==value.lines.length)context.addIssue({code:z.ZodIssueCode.custom,path:['lines'],message:'Each product must appear once.'});});
+export type CreateStockCountInput=z.infer<typeof createStockCountSchema>;
+export const stockCountSchema=z.object({id:z.string().uuid(),organizationId:z.string().uuid(),warehouseId:z.string().uuid(),actorUserId:z.string().uuid(),reason:z.string(),occurredAt:z.coerce.date(),createdAt:z.coerce.date(),lines:z.array(line.extend({id:z.string().uuid(),productName:z.string(),sku:z.string(),difference:signedQuantitySchema,inventoryTransactionId:z.string().uuid().nullable()}))});
+export type StockCount=z.infer<typeof stockCountSchema>;
+export const stockCountQuerySchema=z.object({limit:z.coerce.number().int().min(1).max(100).default(25),offset:z.coerce.number().int().min(0).max(1000000).default(0)}).strict();
+export type StockCountQuery=z.infer<typeof stockCountQuerySchema>;

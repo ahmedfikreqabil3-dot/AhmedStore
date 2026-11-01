@@ -1,0 +1,79 @@
+/* Live catalogue: compact structure shared by products and branch inventory. */
+.design-preview .catalogue-panel{padding:22px 24px}
+.design-preview .catalogue-heading{align-items:center;padding-bottom:18px;gap:16px}
+.design-preview .catalogue-title{display:flex;align-items:center;gap:12px;min-width:0}
+.design-preview .catalogue-title .section-icon{flex:none;width:42px;height:42px}
+.design-preview .catalogue-title h2{display:block;margin:0;font-size:18px;line-height:1.6}
+.design-preview .catalogue-title p{margin:4px 0 0;font-size:13px;line-height:1.7}
+.design-preview .catalogue-actions{flex-shrink:0;gap:8px}
+.design-preview .catalogue-actions .button{margin:0;padding:10px 16px;font-size:13px}
+.design-preview .catalogue-filters{margin-top:18px;gap:14px;align-items:end}
+.design-preview .catalogue-filters label{font-size:13px;gap:7px}
+.design-preview .catalogue-filters input,.design-preview .catalogue-filters select{font-size:14px;min-height:46px;padding:10px 12px}
+.design-preview .catalogue-hint{margin:14px 0 18px;font-size:13px;line-height:1.8}
+.design-preview .catalogue-table-wrap{border:1px solid #e3e9f0;border-radius:9px}
+.design-preview .catalogue-table-wrap table{margin:0;table-layout:auto}
+.design-preview .catalogue-table-wrap th{font-size:13px;padding:14px 16px;color:#52637a}
+.design-preview .catalogue-table-wrap td{padding:16px;font-size:14px;vertical-align:middle}
+.design-preview .catalogue-table-wrap tr:last-child td{border-bottom:0}
+.design-preview .catalogue-table-wrap td:first-child{min-width:220px;white-space:normal}
+.design-preview .catalogue-table-wrap td strong{font-size:14px;line-height:1.8;overflow-wrap:anywhere}
+.design-preview .catalogue-table-wrap td small{font-size:12px;margin-top:4px;line-height:1.6;overflow-wrap:anywhere;text-align:right}
+.design-preview .catalogue-price{direction:ltr;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
+.design-preview .catalogue-badge{font-size:12px;padding:4px 12px;white-space:nowrap}
+.design-preview .catalogue-pagination{padding-top:16px;gap:12px;font-size:13px}
+.design-preview .catalogue-pagination button{font-size:13px;min-height:44px;margin-block:0}
+.design-preview .catalogue-import{padding:18px 22px}
+.design-preview .catalogue-import summary{font-size:14px;min-height:30px}
+.design-preview .catalogue-dialog{padding:24px;width:min(640px,calc(100vw - 32px))}
+.design-preview .catalogue-dialog header{padding-bottom:16px;gap:12px}
+.design-preview .catalogue-dialog header h2{margin:0;font-size:20px;line-height:1.7}
+.design-preview .catalogue-dialog .catalogue-fields{gap:18px 20px}
+.design-preview .catalogue-dialog label{font-size:13px;gap:8px}
+.design-preview .catalogue-dialog input,.design-preview .catalogue-dialog select{font-size:15px;min-height:46px;padding:11px 12px}
+.design-preview .catalogue-fields label:first-child{grid-column:1/-1}
+.design-preview .catalogue-fields label:nth-child(4){grid-column:1/-1}
+.design-preview .catalogue-table-wrap:focus-visible{outline:3px solid #0f766e;outline-offset:3px}
+.design-preview .inventory-context{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0 0;padding:18px;border:1px solid #dce9e5;background:#f3f9f7;border-radius:10px}
+.design-preview .inventory-context-item{display:flex;gap:12px;align-items:center;min-width:0}
+.design-preview .inventory-context-item>div{min-width:0;display:flex;flex-direction:column;gap:4px}
+.design-preview .inventory-context-item>div>span{color:#52637a;font-size:12px}
+.design-preview .inventory-context-item strong{font-size:15px;line-height:1.8;overflow-wrap:anywhere;color:#172b4d}
+.design-preview .inventory-context-item small{color:#52637a;font-size:12px;line-height:1.7}
+.design-preview .inventory-context-item .section-icon{flex-shrink:0}
+.design-preview .inventory-workspace .catalogue-filters .catalogue-search{flex:2;min-width:220px}
+.design-preview .inventory-workspace .catalogue-filters label{flex:1;min-width:150px}
+.design-preview .inventory-workspace .stock-cell bdi{font-size:18px;font-weight:700}
+.design-preview .inventory-workspace .catalogue-table-wrap td:first-child{width:45%}
+.design-preview .inventory-workspace .catalogue-table-wrap table{min-width:580px}
+.design-preview .catalogue-dialog .catalogue-editor-note{padding:12px 14px;background:#f0f7f5;border-radius:8px;color:#24594f;font-size:12px;line-height:1.9;margin:20px 0 0}
+.design-preview .catalogue-dialog footer{border-top:1px solid #e3e9f0;padding-top:18px;margin-top:20px;justify-content:flex-start}
+.design-preview .catalogue-dialog footer button{min-width:110px;margin:0}
+@media(max-width:760px){
+  .design-preview .inventory-context{grid-template-columns:1fr;padding:16px;gap:18px}
+  .design-preview .inventory-workspace .catalogue-filters .catalogue-search{flex-basis:100%;min-width:0}
+  .design-preview .inventory-workspace .catalogue-filters label{min-width:0;flex-basis:calc(50% - 7px)}
+  .design-preview .catalogue-panel{padding:18px}
+  .design-preview .catalogue-heading{align-items:stretch;gap:16px}
+  .design-preview .catalogue-title h2{font-size:17px}
+  .design-preview .catalogue-actions{flex-wrap:wrap}
+  .design-preview .catalogue-table-wrap th,.design-preview .catalogue-table-wrap td{padding:14px 12px}
+  .design-preview .catalogue-filters .catalogue-search{flex-basis:100%;min-width:0}
+  .design-preview .catalogue-filters label{min-width:0;flex-basis:calc(50% - 7px)}
+}
+@media(max-width:480px){
+  .design-preview .inventory-workspace .catalogue-filters label{flex-basis:100%}
+  .design-preview .catalogue-panel{padding:16px 14px}
+  .design-preview .catalogue-title .section-icon{width:36px;height:36px}
+  .design-preview .catalogue-title p{font-size:12px}
+  .design-preview .catalogue-filters label{width:auto;flex-basis:100%}
+  .design-preview .catalogue-filters input,.design-preview .catalogue-filters select{font-size:16px!important}
+  .design-preview .catalogue-pagination{align-items:center}
+  .design-preview .catalogue-dialog{padding:20px 16px;max-height:calc(100dvh - 24px)}
+  .design-preview .catalogue-dialog input,.design-preview .catalogue-dialog select{font-size:16px!important}
+  .design-preview .catalogue-dialog header{margin-bottom:16px;padding-bottom:12px}
+  .design-preview .catalogue-dialog .catalogue-fields{gap:12px}
+  .design-preview .catalogue-dialog label{gap:5px;line-height:1.5}
+  .design-preview .catalogue-dialog .catalogue-editor-note{margin-top:14px;padding:10px 12px;line-height:1.7}
+  .design-preview .catalogue-dialog footer button{flex:1;min-width:0}
+}

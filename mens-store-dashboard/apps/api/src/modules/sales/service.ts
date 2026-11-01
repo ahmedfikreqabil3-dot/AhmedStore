@@ -28,12 +28,12 @@ export interface SalesRepository {
   findCustomer(id: string, organizationId: string): Promise<Customer | null>;
   findWarehouse(id: string, organizationId: string): Promise<Warehouse | null>;
   findProducts(ids: string[], organizationId: string): Promise<Product[]>;
-  post(command: PostSaleCommand): Promise<{ ok: true; sale: PostedSale } | { ok: false; reason: 'INSUFFICIENT_STOCK' }>;
+  post(command: PostSaleCommand): Promise<{ ok: true; sale: PostedSale; replayed?: boolean } | { ok: false; reason: 'INSUFFICIENT_STOCK' | 'CUSTOMER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'CREDIT_LIMIT_EXCEEDED' }>;
 }
 
 export type PostSaleResult =
   | { ok: true; sale: PostedSale; replayed: boolean }
-  | { ok: false; reason: 'CUSTOMER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'LINE_DISCOUNT_EXCEEDS_SUBTOTAL' | 'PAYMENT_TOTAL_MISMATCH' | 'INSUFFICIENT_STOCK' };
+  | { ok: false; reason: 'CUSTOMER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'LINE_DISCOUNT_EXCEEDS_SUBTOTAL' | 'PAYMENT_TOTAL_MISMATCH' | 'INSUFFICIENT_STOCK' | 'CREDIT_LIMIT_EXCEEDED' };
 
 export function createSalesService(repository: SalesRepository) {
   return {
@@ -49,7 +49,7 @@ export function createSalesService(repository: SalesRepository) {
       const calculated = calculateSale(input);
       if (!calculated.ok) return calculated;
       const posted = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, calculated: calculated.sale, products: new Map(products.map((product) => [product.id, product])) });
-      return posted.ok ? { ok: true, sale: posted.sale, replayed: false } : posted;
+      return posted.ok ? { ok: true, sale: posted.sale, replayed: posted.replayed ?? false } : posted;
     }
   };
 }

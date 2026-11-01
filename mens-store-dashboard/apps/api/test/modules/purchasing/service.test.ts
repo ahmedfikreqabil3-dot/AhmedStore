@@ -13,7 +13,7 @@ const product = { id: productId, organizationId, categoryId: null, name: 'Oxford
 const posted = { id: '0e92a24a-c66c-4a28-b658-34c88db36e8a', organizationId, supplierId, warehouseId, subtotal: '20.0000', total: '20.0000', occurredAt: input.occurredAt };
 
 function repository(overrides: Partial<PurchaseRepository> = {}): PurchaseRepository {
-  return { findByIdempotencyKey: async () => null, findSupplier: async () => supplier, findWarehouse: async () => warehouse, findProducts: async (ids) => ids.includes(productId) ? [product] : [], findProductsByBarcodes: async (barcodes) => barcodes.includes('BC-1') ? [product] : [], post: async () => posted, ...overrides };
+  return { findByIdempotencyKey: async () => null, findSupplier: async () => supplier, findWarehouse: async () => warehouse, findProducts: async (ids) => ids.includes(productId) ? [product] : [], findProductsByBarcodes: async (barcodes) => barcodes.includes('BC-1') ? [product] : [], post: async () => ({ok:true,purchase:posted,replayed:false}), ...overrides };
 }
 
 describe('purchase service', () => {
@@ -33,7 +33,7 @@ describe('purchase service', () => {
 
   it('requires exact payment totals and posts normalized barcode lines', async () => {
     let command: unknown;
-    const service = createPurchaseService(repository({ post: async (value) => { command ??= value; return posted; } }));
+    const service = createPurchaseService(repository({ post: async (value) => { command ??= value; return {ok:true,purchase:posted,replayed:false}; } }));
     await expect(service.post(organizationId, actorUserId, 'mismatch', { ...input, payments: [{ method: 'CASH', amount: '19.9999' }] })).resolves.toEqual({ ok: false, reason: 'PAYMENT_TOTAL_MISMATCH' });
     await expect(service.post(organizationId, actorUserId, 'key-1', input)).resolves.toEqual({ ok: true, purchase: posted, replayed: false });
     await expect(service.post(organizationId, actorUserId, 'key-2', { ...input, lines: [{ productId, quantity: '2.0000', unitCost: '10.0000' }] })).resolves.toEqual({ ok: true, purchase: posted, replayed: false });

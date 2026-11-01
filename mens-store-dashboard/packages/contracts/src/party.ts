@@ -18,6 +18,8 @@ export type Customer = z.infer<typeof customerSchema>;
 
 export const createCustomerSchema = customerSchema.pick({ name: true, phone: true, email: true, address: true, notes: true, creditLimit: true });
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export const updateCustomerSchema = createCustomerSchema.extend({version:z.number().int().positive()}).strict();
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 
 export const supplierSchema = z.object({
   id: z.string().uuid(),
@@ -34,3 +36,5 @@ export type Supplier = z.infer<typeof supplierSchema>;
 
 export const createSupplierSchema = supplierSchema.pick({ name: true, phone: true, email: true, address: true, notes: true });
 export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
+export const updateSupplierSchema = createSupplierSchema.extend({version:z.number().int().positive()}).strict();
+export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;

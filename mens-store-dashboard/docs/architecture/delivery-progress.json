@@ -1,0 +1,423 @@
+{
+  "asOf": "2026-10-30",
+  "scope": "First production release with the legacy functional baseline; post-launch growth (Phase 7) excluded.",
+  "basis": "Planning estimate, not elapsed effort or test coverage. Fixed phase weights total 100; work packages are equal-weight within a phase. score 1 = implemented with relevant evidence, 0.5 = partial or current verification/acceptance incomplete, 0 = absent/unverified. Phase acceptance is separate and requires every quality gate.",
+  "currentPhase": 4,
+  "nextWorkstream": "Finish customer/supplier lifecycle and independent settlements with treasury dependencies; implement remaining document, report, dashboard and admin bindings. Continue exact source coverage, complete keyboard/device checks and owner acceptance. Closed-period policy is awaiting the owner choice.",
+  "phases": [
+    {
+      "id": 0,
+      "name": "Architecture and scope baseline",
+      "weight": 5,
+      "status": "complete_baseline",
+      "items": [
+        {
+          "id": "A01",
+          "title": "Legacy flows, architecture, integrity rules and scope baseline",
+          "score": 1,
+          "evidence": "docs/architecture/phase-0-verification.md; phase-0-current-system.md; domain-model.md",
+          "gap": "Current scope inventory is reconciled by this audit; future scope changes must be explicit."
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Engineering foundation",
+      "weight": 10,
+      "status": "complete_baseline",
+      "items": [
+        {
+          "id": "E01",
+          "title": "Workspace, React/Fastify/contracts, Prisma migrations, build/test setup and local runtime",
+          "score": 1,
+          "evidence": "package.json; compose.yaml; database/prisma/migrations; LOCAL-RUN.md",
+          "gap": "Local operation is not production deployment."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Identity and tenancy baseline",
+      "weight": 10,
+      "status": "complete_baseline",
+      "items": [
+        {
+          "id": "I01",
+          "title": "Sessions, password hashing, tenant scoping, role checks and identity audit for the exposed API",
+          "score": 1,
+          "evidence": "docs/architecture/phase-2-verification.md; apps/api/src/modules/identity; apps/api/test/integration/identity-postgres.test.ts",
+          "gap": "Legacy permission exceptions and warehouse-scoped grants remain a pre-cutover decision/control; user-admin UI is F17."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Complete transactional backend scope",
+      "weight": 25,
+      "status": "in_progress",
+      "items": [
+        {
+          "id": "B01",
+          "title": "Catalogue/category creation, reads and atomic product/category Excel import",
+          "score": 1,
+          "evidence": "apps/api/src/modules/catalogue/{category,product,category-import,product-import}.ts",
+          "gap": ""
+        },
+        {
+          "id": "B02",
+          "title": "Audited/versioned product maintenance and archive rules",
+          "score": 0.5,
+          "evidence": "apps/api/src/modules/catalogue/product-update.ts; product-update-repository.ts; app.ts PATCH /products/:productId; apps/api/test/modules/catalogue/product-update.test.ts; apps/api/test/integration/product-update-postgres.test.ts; test/app.test.ts",
+          "gap": "PATCH route, service and repository verified including concurrency, tenant isolation, audit rollback and immutable historical snapshots. Archive/lifecycle policy remains; partial score retained."
+        },
+        {
+          "id": "B03",
+          "title": "Warehouse directory, opening/adjustment ledger and current/historical stock",
+          "score": 1,
+          "evidence": "apps/api/src/modules/catalogue/warehouse.ts; modules/inventory/{movement,stock}.ts",
+          "gap": ""
+        },
+        {
+          "id": "B04",
+          "title": "Paired atomic stock transfers and low-stock controls",
+          "score": 1,
+          "evidence": "apps/api/src/modules/inventory/{transfer,count,threshold,movement-repository,stock-integrity}.ts; real PostgreSQL concurrency/rollback/tenant/constraint tests; live StockCounts, InventoryTransfers, InventoryMovements and StockThresholds interfaces",
+          "gap": "Relevant stock implementation and configured coverage gates passed. Broader role/warehouse-scoping and final browser/owner acceptance remain global B16/F20 release gates."
+        },
+        {
+          "id": "B05",
+          "title": "Customer/supplier master-data lifecycle and imports",
+          "score": 0.5,
+          "evidence": "modules/parties/{customer,supplier,supplier-import,update,lifecycle}.ts; PostgreSQL lifecycle/version/rollback/racing-credit tests; PartyWorkspace.tsx",
+          "gap": "Customer and supplier profile maintenance, guarded archive/reactivate and paginated archived directories are implemented. Supplier Excel import exists; customer import remains. Future quotation/order persistence must extend open-document archive guards."
+        },
+        {
+          "id": "B06",
+          "title": "Atomic sales, exact split payments, stock issues and idempotency",
+          "score": 1,
+          "evidence": "apps/api/src/modules/sales/{service,calculation}.ts; docs/architecture/phase-4-live-shell-pos.md",
+          "gap": ""
+        },
+        {
+          "id": "B07",
+          "title": "Purchase posting, immutable revision and split-settlement purchase returns",
+          "score": 1,
+          "evidence": "apps/api/src/modules/purchasing; docs/architecture/phase-4-purchasing-ui.md",
+          "gap": ""
+        },
+        {
+          "id": "B08",
+          "title": "Invoice returns, reversal/replacement and no-invoice approval posting",
+          "score": 1,
+          "evidence": "apps/api/src/modules/sales/*return*.ts; apps/api/test/modules/sales",
+          "gap": ""
+        },
+        {
+          "id": "B09",
+          "title": "Immutable treasury posting and expense posting primitives",
+          "score": 1,
+          "evidence": "apps/api/src/modules/finance/expense-service.ts; database/prisma/schema.prisma TreasuryTransaction",
+          "gap": "Multi-treasury administration is separately B15."
+        },
+        {
+          "id": "B10",
+          "title": "Personal shifts, ledger totals, cash reconciliation and finance review",
+          "score": 1,
+          "evidence": "apps/api/src/modules/finance/{shift-service,shift-totals}.ts",
+          "gap": ""
+        },
+        {
+          "id": "B11",
+          "title": "Customer/supplier ledgers, balances and independent settlements",
+          "score": 0.5,
+          "evidence": "database/prisma/schema.prisma CustomerLedgerEntry/SupplierLedgerEntry; modules/parties/{customer-ledger,statement}.ts; sales posting/return/approval adapters; customer credit and party-statement PostgreSQL tests",
+          "gap": "Customer credit postings and return reversals, exact scoped statements with opening/running/closing balances and pagination are implemented. Zero means unlimited; positive limits are enforced transactionally, including concurrent sales. Independent customer collections and supplier payments/allocation commands remain; B15 treasury-account dependency is open."
+        },
+        {
+          "id": "B12",
+          "title": "Reporting read models and exports",
+          "score": 0.5,
+          "evidence": "apps/api/src/modules/reporting/sales-export.ts; modules/sales/history-service.ts",
+          "gap": "Only sales history/export and shift summaries are available; dashboard, inventory/purchasing/expense/treasury/party reports remain."
+        },
+        {
+          "id": "B13",
+          "title": "Quotations and held invoices with idempotent sale conversion",
+          "score": 0,
+          "evidence": "docs/architecture/phase-0-current-system.md; domain-model.md Documents",
+          "gap": "No target-model service/route found; pending-sale recovery is not a held-invoice feature."
+        },
+        {
+          "id": "B14",
+          "title": "Purchase orders and separate order-to-receipt lifecycle",
+          "score": 0,
+          "evidence": "docs/architecture/phase-0-current-system.md; domain-model.md Documents",
+          "gap": "Purchase invoices receive stock, but order/partial-receipt lifecycle is absent."
+        },
+        {
+          "id": "B15",
+          "title": "Multiple treasury accounts, account administration and controlled transfers",
+          "score": 0,
+          "evidence": "docs/architecture/phase-0-current-system.md; no treasury account management routes in app.ts",
+          "gap": "Existing TreasuryTransaction postings are not a complete multi-treasury administration module."
+        },
+        {
+          "id": "B16",
+          "title": "Current quality gate, retry resilience, contract and scope hardening",
+          "score": 0.5,
+          "evidence": "183 API tests / 43 files, 216 web tests / 15 files and 25 contract tests / 10 files passed at 100% configured metrics after the stock/control slices. See phase-3-4-execution.md.",
+          "gap": "Original-key/double-submit controls added to purchase/replacement/returns. Remaining bootstrap financial repositories must enter source coverage; complete pagination/error contracts, scope decisions and whole-cycle/browser acceptance remain."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Complete operational frontend scope",
+      "weight": 30,
+      "status": "in_progress",
+      "items": [
+        {
+          "id": "F01",
+          "title": "Login, restored sessions and authorized application navigation",
+          "score": 1,
+          "evidence": "apps/web/src/StoreApp.tsx; StoreApp.test.tsx",
+          "gap": ""
+        },
+        {
+          "id": "F02",
+          "title": "Live POS, discounts/split payment and uncertain-result recovery",
+          "score": 1,
+          "evidence": "apps/web/src/LivePOS.tsx; LivePOS.test.tsx; store-api.ts",
+          "gap": ""
+        },
+        {
+          "id": "F03",
+          "title": "Catalogue/category filters, product create/edit and Excel workflow",
+          "score": 0.5,
+          "evidence": "apps/web/src/CatalogueWorkspace.tsx; App.tsx import panels",
+          "gap": "Product update API verification complete; archive/full master-data lifecycle remains."
+        },
+        {
+          "id": "F04",
+          "title": "Branch/current/historical inventory viewing",
+          "score": 1,
+          "evidence": "apps/web/src/CatalogueWorkspace.tsx inventory view and tests",
+          "gap": ""
+        },
+        {
+          "id": "F05",
+          "title": "Purchase entry, selection, replacement and purchase return forms",
+          "score": 1,
+          "evidence": "apps/web/src/App.tsx purchasing components and tests",
+          "gap": "Posting/resilience and final whole-cycle acceptance are separately B16/F20."
+        },
+        {
+          "id": "F06",
+          "title": "Sales history, complete invoice details, invoice-linked return and revision UI",
+          "score": 0.5,
+          "evidence": "apps/web/src/App.tsx SalesHistory/Search; no full sales-detail route or invoice-linked return form",
+          "gap": "Current details show identifier/customer/total only; original lines and invoice-return/revision screens remain."
+        },
+        {
+          "id": "F07",
+          "title": "No-invoice return request and finance approval UI",
+          "score": 1,
+          "evidence": "apps/web/src/App.tsx NoInvoiceReturnSubmission/Approval",
+          "gap": ""
+        },
+        {
+          "id": "F08",
+          "title": "Shift open/close, ledger summary and review UI",
+          "score": 1,
+          "evidence": "apps/web/src/App.tsx ShiftPanel/ShiftReviewPanel",
+          "gap": ""
+        },
+        {
+          "id": "F09",
+          "title": "Real dashboard KPIs, trends and actionable summaries",
+          "score": 0,
+          "evidence": "apps/web/src/StoreApp.tsx home is workflow shortcuts",
+          "gap": "Prototype KPI values do not count as live implementation."
+        },
+        {
+          "id": "F10",
+          "title": "Dedicated reports centre with applicable filters and exports",
+          "score": 0,
+          "evidence": "No reports page in StoreApp.tsx navigation",
+          "gap": "Sales export inside history does not satisfy the reports-centre scope."
+        },
+        {
+          "id": "F11",
+          "title": "Customer management and account statement UI",
+          "score": 0.5,
+          "evidence": "apps/web/src/PartyWorkspace.tsx; PartyStatement.tsx and tests; StoreApp customer route",
+          "gap": "Live search/create/review/versioned edit, real exact statements, archive/reactivate and archived directory exist. Customer import remains; final role/owner acceptance is separate."
+        },
+        {
+          "id": "F12",
+          "title": "Supplier management and account statement UI",
+          "score": 1,
+          "evidence": "PartyWorkspace.tsx; PartyLifecycle.tsx; PartyStatement.tsx and tests; supplier import; PostgreSQL/API role tests; desktop/mobile archive-preview and directory checks",
+          "gap": "Live management, supplier import, guarded archive/reactivate, archived directory and account statements are implemented. Independent payments are F24/B11; final owner/role acceptance remains F20."
+        },
+        {
+          "id": "F13",
+          "title": "Expense entry, listing and review UI",
+          "score": 1,
+          "evidence": "apps/web/src/ExpensesWorkspace.tsx and tests; finance/expense-history.ts; GET/POST expenses; financial PostgreSQL and API role tests; desktop/mobile review capture",
+          "gap": "Live entry, exact review, idempotent uncertain-result recovery, date-filtered paginated history, whole-period totals and detail are implemented and verified. Future treasury-account selection follows B15; full role/owner acceptance remains F20."
+        },
+        {
+          "id": "F14",
+          "title": "Treasury accounts, ledger and transfer UI",
+          "score": 0,
+          "evidence": "Only shift UI is exposed under finance",
+          "gap": ""
+        },
+        {
+          "id": "F15",
+          "title": "Branch/warehouse creation, editing and lifecycle UI",
+          "score": 0,
+          "evidence": "Balance selection exists; no branch-management page",
+          "gap": ""
+        },
+        {
+          "id": "F16",
+          "title": "Stock opening/counting/adjustment/transfer operation UI",
+          "score": 1,
+          "evidence": "apps/web/src/{StockCounts,InventoryMovements,InventoryTransfers,StockThresholds}.tsx and their interaction/recovery tests; authorized operational navigation",
+          "gap": "All named stock workflows are operational. Full device/keyboard/browser and owner acceptance remain F20; no browser acceptance is inferred from jsdom coverage."
+        },
+        {
+          "id": "F17",
+          "title": "User and approved role/permission administration UI",
+          "score": 0,
+          "evidence": "User API exists; no administration page",
+          "gap": ""
+        },
+        {
+          "id": "F18",
+          "title": "Settings and category-management UI",
+          "score": 0,
+          "evidence": "Prototype settings/import panels only; no live settings page",
+          "gap": ""
+        },
+        {
+          "id": "F19",
+          "title": "Consistent RTL design for the nine existing live screens",
+          "score": 1,
+          "evidence": "docs/architecture/phase-4a-screen-acceptance.md; 99 web tests, 100% coverage",
+          "gap": "Final owner visual acceptance is a gate, not proof of remaining-feature completion."
+        },
+        {
+          "id": "F20",
+          "title": "Complete real commerce-cycle, role and end-user acceptance",
+          "score": 0.5,
+          "evidence": "docs/architecture/visual-review-2026-10-30.md; 72 prototype and 33 live viewport captures; native dialog keyboard/recovery checks; component and PostgreSQL suites",
+          "gap": "Full commerce-cycle/role-branch matrix, physical printing and owner final design acceptance remain. Viewport and read-only browser sweeps do not certify financial confirmations."
+        },
+        {
+          "id": "F21",
+          "title": "Quotation, held-invoice and convert-to-sale UI",
+          "score": 0,
+          "evidence": "Legacy baseline; no current live page",
+          "gap": ""
+        },
+        {
+          "id": "F22",
+          "title": "Purchase order and receipt-management UI",
+          "score": 0,
+          "evidence": "Legacy baseline; purchase invoice page only",
+          "gap": ""
+        },
+        {
+          "id": "F23",
+          "title": "Invoice/receipt printing and document templates",
+          "score": 0,
+          "evidence": "Prototype print actions; no live print flow",
+          "gap": ""
+        },
+        {
+          "id": "F24",
+          "title": "Customer collections and supplier payment/settlement UI",
+          "score": 0,
+          "evidence": "No standalone collection/payment pages or commands",
+          "gap": ""
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Repeatable legacy migration and reconciled cutover",
+      "weight": 10,
+      "status": "not_started",
+      "items": [
+        {
+          "id": "M01",
+          "title": "Legacy export, mapping and repeatable dry-run import",
+          "score": 0,
+          "evidence": "Legacy application retained; no end-to-end migration command/evidence found",
+          "gap": ""
+        },
+        {
+          "id": "M02",
+          "title": "Reconcile stock, customer/supplier balances, sales and treasury",
+          "score": 0,
+          "evidence": "No whole-data migration reconciliation evidence",
+          "gap": ""
+        },
+        {
+          "id": "M03",
+          "title": "Verified backup, rollback rehearsal and approved cutover",
+          "score": 0,
+          "evidence": "No migration restore/cutover acceptance evidence",
+          "gap": ""
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Production deployment and readiness",
+      "weight": 10,
+      "status": "not_started",
+      "items": [
+        {
+          "id": "P01",
+          "title": "Staging/production deployment, HTTPS and managed secrets",
+          "score": 0,
+          "evidence": "Local runtime and compose only",
+          "gap": ""
+        },
+        {
+          "id": "P02",
+          "title": "Release CI/CD and operational monitoring/alerts",
+          "score": 0,
+          "evidence": "No production release/monitoring evidence found",
+          "gap": ""
+        },
+        {
+          "id": "P03",
+          "title": "Automated backup and successful restore drill",
+          "score": 0,
+          "evidence": "No production backup/restore evidence found",
+          "gap": ""
+        },
+        {
+          "id": "P04",
+          "title": "Security/load testing and signed production go-live",
+          "score": 0,
+          "evidence": "No 100-active-user p95/availability/go-live evidence found",
+          "gap": ""
+        }
+      ]
+    }
+  ],
+  "designReview": {
+    "status": "expanded_prototype_for_review",
+    "route": "http://localhost:5173/design-preview.html#journeys",
+    "evidence": "docs/architecture/phase-4-full-journey-design.md",
+    "countsAsLiveImplementation": false,
+    "managementCheckpoint": "2026-10-30: archive/restore, scope/reset request, statements, discard, partial-receipt and invoice-return/revision prototype journeys; 11 interaction tests, TypeScript and preview build passed. New browser/mobile visual acceptance pending.",
+    "documentReportPrintCheckpoint": "2026-10-30: held continuation/cancellation/expiry, split refund example, report states/drill-down, four print layouts and POS/sales/settings journey links. 21 design interaction tests passed; preview TypeScript/build and diff checks passed. New visual/mobile/keyboard acceptance and operational bindings remain open."
+  }
+}

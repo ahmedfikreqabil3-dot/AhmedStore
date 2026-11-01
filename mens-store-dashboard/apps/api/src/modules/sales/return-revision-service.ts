@@ -10,7 +10,7 @@ export interface ReturnRevisionRepository {
   findPosted(id: string, organizationId: string): Promise<RevisableReturn | null>;
   findSale(id: string, organizationId: string): Promise<ReturnableSale | null>;
   returnedQuantity(saleLineId: string, organizationId: string, excludingReturnId: string): Promise<string>;
-  revise(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; original: RevisableReturn; input: CreateInvoiceReturnInput; sale: ReturnableSale; calculated: CalculatedReturn }): Promise<{ ok: true; salesReturn: PostedReturn } | { ok: false; reason: 'RETURN_NOT_POSTED' | 'PAYMENT_TOTAL_MISMATCH' | 'RETURN_QUANTITY_EXCEEDED' }>;
+  revise(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; original: RevisableReturn; input: CreateInvoiceReturnInput; sale: ReturnableSale; calculated: CalculatedReturn }): Promise<{ ok: true; salesReturn: PostedReturn; replayed?:boolean } | { ok: false; reason: 'RETURN_NOT_POSTED' | 'PAYMENT_TOTAL_MISMATCH' | 'RETURN_QUANTITY_EXCEEDED' | 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'ACTOR_UNAVAILABLE' | 'INSUFFICIENT_STOCK' | 'IDEMPOTENCY_KEY_CONFLICT' }>;
 }
 
 function decimalToUnits(value: string) {
@@ -20,7 +20,7 @@ function decimalToUnits(value: string) {
 
 export type ReviseInvoiceReturnResult =
   | { ok: true; salesReturn: PostedReturn; replayed: boolean }
-  | { ok: false; reason: 'RETURN_NOT_POSTED' | 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'RETURN_QUANTITY_EXCEEDED' | 'PAYMENT_TOTAL_MISMATCH' };
+  | { ok: false; reason: 'RETURN_NOT_POSTED' | 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'RETURN_QUANTITY_EXCEEDED' | 'PAYMENT_TOTAL_MISMATCH' | 'ACTOR_UNAVAILABLE' | 'INSUFFICIENT_STOCK' | 'IDEMPOTENCY_KEY_CONFLICT' };
 
 export function createReturnRevisionService(repository: ReturnRevisionRepository) {
   return {
@@ -40,7 +40,7 @@ export function createReturnRevisionService(repository: ReturnRevisionRepository
         if (requested + decimalToUnits(await repository.returnedQuantity(saleLineId, organizationId, original.id)) > decimalToUnits(saleLine.quantity)) return { ok: false, reason: 'RETURN_QUANTITY_EXCEEDED' };
       }
       const posted = await repository.revise({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, original, input, sale, calculated: calculateInvoiceReturn(sale, input) });
-      return posted.ok ? { ok: true, salesReturn: posted.salesReturn, replayed: false } : posted;
+      return posted.ok ? { ok: true, salesReturn: posted.salesReturn, replayed: posted.replayed ?? false } : posted;
     }
   };
 }

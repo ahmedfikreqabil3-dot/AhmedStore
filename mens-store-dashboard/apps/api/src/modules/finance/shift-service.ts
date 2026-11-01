@@ -40,11 +40,13 @@ function amount(value: bigint) {
   return `${negative ? '-' : ''}${absolute / 10_000n}.${(absolute % 10_000n).toString().padStart(4, '0')}`;
 }
 
-export function createShiftService(repository: ShiftRepository, summarize: (organizationId: string, openedAt: Date, closedAt: Date) => Promise<{ ok: true; totals: ShiftTotals } | { ok: false; reason: 'INVALID_SHIFT_PERIOD' }>) {
+export class ShiftActorUnavailableError extends Error {constructor(){super('ACTOR_UNAVAILABLE');}}
+export function createShiftService(repository: ShiftRepository, summarize: (organizationId: string, openedAt: Date, closedAt: Date, actorUserId?:string) => Promise<{ ok: true; totals: ShiftTotals } | { ok: false; reason: 'INVALID_SHIFT_PERIOD' }>) {
   return {
     async open(organizationId: string, userId: string, openedAt: Date) {
       if (await repository.findOpen(organizationId, userId)) return { ok: false as const, reason: 'SHIFT_ALREADY_OPEN' as const };
-      return { ok: true as const, shift: await repository.create(organizationId, userId, openedAt) };
+      try{return { ok: true as const, shift: await repository.create(organizationId, userId, openedAt) };}
+      catch(error){if(error instanceof ShiftActorUnavailableError)return {ok:false as const,reason:'ACTOR_UNAVAILABLE' as const};throw error;}
     },
     async current(organizationId: string, userId: string) {
       return repository.findOpen(organizationId, userId);
@@ -54,7 +56,7 @@ export function createShiftService(repository: ShiftRepository, summarize: (orga
       if (!shift) return { ok: false as const, reason: 'SHIFT_NOT_FOUND' as const };
       if (shift.userId !== userId) return { ok: false as const, reason: 'SHIFT_NOT_OWNED' as const };
       if (shift.status !== 'OPEN') return { ok: false as const, reason: 'SHIFT_NOT_OPEN' as const };
-      const summarized = await summarize(organizationId, shift.openedAt, closedAt);
+      const summarized = await summarize(organizationId, shift.openedAt, closedAt,shift.userId);
       if (!summarized.ok) return summarized;
       const expectedCash = summarized.totals.methods.find((method) => method.method === 'CASH')?.net ?? '0.0000';
       const cashDifference = amount(units(countedCash) - units(expectedCash));
@@ -74,7 +76,7 @@ export function createShiftService(repository: ShiftRepository, summarize: (orga
       if (!shift) return { ok: false as const, reason: 'SHIFT_NOT_FOUND' as const };
       if (shift.userId !== requesterUserId && !canReview) return { ok: false as const, reason: 'FORBIDDEN' as const };
       const closedAt = shift.closedAt ?? now;
-      const result = await summarize(organizationId, shift.openedAt, closedAt);
+      const result = await summarize(organizationId, shift.openedAt, closedAt,shift.userId);
       return result.ok ? { ok: true as const, shift, totals: result.totals } : result;
     },
     listClosed(organizationId: string) { return repository.listClosed(organizationId); }

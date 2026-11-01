@@ -14,7 +14,7 @@ function repository(overrides: Partial<InventoryMovementRepository> = {}): Inven
     findByIdempotencyKey: async () => null,
     findProduct: async () => product,
     findWarehouse: async () => warehouse,
-    post: async ({ actorUserId: _actorUserId, ...movement }) => movement,
+    post: async ({ actorUserId: _actorUserId, ...movement }) => ({ok:true,movement,replayed:false}),
     ...overrides
   };
 }
@@ -37,9 +37,13 @@ describe('inventory movement service', () => {
 
   it('posts an immutable movement with tenant, actor, and idempotency context', async () => {
     let posted: unknown;
-    const service = createInventoryMovementService(repository({ post: async (movement) => { posted = movement; const { actorUserId: _actorUserId, ...stored } = movement; return stored; } }));
+    const service = createInventoryMovementService(repository({ post: async (movement) => { posted = movement; const { actorUserId: _actorUserId, ...stored } = movement; return {ok:true,movement:stored,replayed:false}; } }));
     const result = await service.post(organizationId, actorUserId, 'key-1', input);
     expect(result).toMatchObject({ ok: true, replayed: false, movement: { organizationId, idempotencyKey: 'key-1', ...input } });
     expect(posted).toMatchObject({ organizationId, actorUserId, idempotencyKey: 'key-1', ...input, id: expect.any(String) });
+  });
+  it('requires a positive opening and propagates a transactional stock rejection',async()=>{
+    expect(await createInventoryMovementService(repository()).post(organizationId,actorUserId,'negative',{...input,quantity:'-1'})).toEqual({ok:false,reason:'INVALID_OPENING_BALANCE'});
+    expect(await createInventoryMovementService(repository({post:async()=>({ok:false,reason:'INSUFFICIENT_STOCK'})})).post(organizationId,actorUserId,'adjust',{...input,type:'ADJUSTMENT',quantity:'-1'})).toEqual({ok:false,reason:'INSUFFICIENT_STOCK'});
   });
 });

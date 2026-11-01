@@ -3,6 +3,31 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App, CategoryImportPanel, HistoricalInventory, LoadedProductCatalogue, LoadedPurchaseBarcodeEntry, LoadedPurchaseEntryEditor, LoginPanel, NoInvoiceReturnApproval, NoInvoiceReturnSubmission, ProductCatalogue, ProductImportPanel, ProductTable, ProductTableRow, PurchaseBarcodeEntry, PurchaseEntryEditor, PurchaseReturnForm, PurchaseRevisionEditor, PurchaseSelector, SalesHistory, SalesHistoryExport, SalesHistorySearch, ShiftPanel, ShiftReviewPanel, SupplierImportPanel, approveNoInvoiceReturn, categoryImportActions, closeCashShift, createNoInvoiceIdempotencyKey, createPurchaseReturnIdempotencyKey, downloadSalesHistoryXlsx, loadClosedShifts, loadCurrentShift, loadHistoricalStock, loadInventoryOptions, loadNoInvoiceReturnOptions, loadPendingNoInvoiceReturns, loadProductCatalogue, loadPurchase, loadPurchaseEntryOptions, loadPurchaseScanProducts, loadPurchases, loadSalesHistory, loadShiftSummary, loginUser, openCashShift, postPurchase, productImportActions, revisePurchase, reviewCashShift, submitNoInvoiceReturn, submitPurchaseReturn, supplierImportActions } from './App.js';
 
+it('keeps new and replacement purchase headings uniquely associated with their sections', () => {
+  const options = { suppliers: [], warehouses: [], products: [] };
+  const purchase = { id: 'purchase-1', supplierId: 'supplier-1', warehouseId: 'branch-1', status: 'POSTED' as const, total: '10.0000', occurredAt: '2026-10-09T00:00:00.000Z', lines: [] };
+  render(<><PurchaseEntryEditor options={options}/><PurchaseEntryEditor options={options} revisionOf={purchase}/></>);
+  const sections = Array.from(document.querySelectorAll('.purchase-entry'));
+  const ids = sections.map((section) => section.getAttribute('aria-labelledby'));
+  expect(new Set(ids).size).toBe(2);
+  expect(screen.getByRole('heading', { name: 'فاتورة مشتريات جديدة', level: 2 })).toHaveAttribute('id', ids[0]);
+  expect(screen.getByRole('heading', { name: 'مراجعة فاتورة المشتريات', level: 3 })).toHaveAttribute('id', ids[1]);
+});
+
+it('associates purchase entry errors with their relevant controls rather than a remote message', () => {
+  render(<PurchaseEntryEditor options={{ suppliers: [], warehouses: [], products: [] }}/>);
+  const barcode = screen.getByLabelText('باركود فاتورة المشتريات');
+  fireEvent.change(barcode, { target: { value: 'unknown' } });
+  fireEvent.click(screen.getByRole('button', { name: 'مسح الباركود' }));
+  expect(barcode).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByRole('alert')).toHaveAttribute('id', barcode.getAttribute('aria-errormessage'));
+  fireEvent.click(screen.getByRole('button', { name: 'إضافة دفعة' }));
+  const amount = screen.getByLabelText('مبلغ سداد المشتريات');
+  expect(amount).toHaveAttribute('aria-invalid', 'true');
+  expect(barcode).toHaveAttribute('aria-invalid', 'false');
+  expect(screen.getByRole('alert')).toHaveAttribute('id', amount.getAttribute('aria-errormessage'));
+});
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const emptySales = async () => ({ sales: [], total: 0 });
 
@@ -275,7 +300,7 @@ describe('App', () => {
   });
 
   it('lets Finance inspect ledger totals and review only closed shifts while reporting failures', async () => {
-    const closed = { id: 'shift-1', status: 'CLOSED' as const, expectedCash: '20.0000', countedCash: '20.0000', cashDifference: '0.0000', discrepancyReason: null, openedAt: '2026-10-09T08:00:00.000Z', closedAt: '2026-10-09T16:00:00.000Z' }; const reviewed = { ...closed, id: 'shift-2', status: 'REVIEWED' as const }; const summary = { shift: closed, totals: { receipts: '30.0000', refunds: '10.0000', net: '20.0000', methods: [{ method: 'CASH', receipts: '30.0000', refunds: '10.0000', net: '20.0000' }] } }; const review = vi.fn().mockResolvedValue({ ...closed, status: 'REVIEWED' as const }); const view = render(<ShiftReviewPanel loadShifts={async () => [closed, reviewed]} loadSummary={async () => summary} reviewShift={review} />); fireEvent.click((await screen.findAllByRole('button', { name: 'عرض إجمالي الدفتر' }))[0]); expect(await screen.findByLabelText('إجمالي الوردية')).toHaveTextContent('الصافي: 20.0000'); fireEvent.click(screen.getByRole('button', { name: 'مراجعة الوردية' })); expect(await screen.findByText('تمت مراجعة الوردية shift-1.')).toBeInTheDocument(); expect(review).toHaveBeenCalledWith('shift-1'); expect(screen.queryByRole('button', { name: 'مراجعة الوردية' })).not.toBeInTheDocument();
+    const closed = { id: 'shift-1', status: 'CLOSED' as const, expectedCash: '20.0000', countedCash: '20.0000', cashDifference: '0.0000', discrepancyReason: null, openedAt: '2026-10-09T08:00:00.000Z', closedAt: '2026-10-09T16:00:00.000Z' }; const reviewed = { ...closed, id: 'shift-2', status: 'REVIEWED' as const }; const summary = { shift: closed, totals: { receipts: '30.0000', refunds: '10.0000', net: '20.0000', methods: [{ method: 'CASH', receipts: '30.0000', refunds: '10.0000', net: '20.0000' }] } }; const review = vi.fn().mockResolvedValue({ ...closed, status: 'REVIEWED' as const }); const view = render(<ShiftReviewPanel loadShifts={async () => [closed, reviewed]} loadSummary={async () => summary} reviewShift={review} />); fireEvent.click((await screen.findAllByRole('button', { name: 'عرض إجمالي الدفتر' }))[0]); expect(await screen.findByLabelText('إجمالي الوردية')).toHaveTextContent('الصافي: 20.00'); fireEvent.click(screen.getByRole('button', { name: 'مراجعة الوردية' })); expect(await screen.findByText('تمت مراجعة الوردية shift-1.')).toBeInTheDocument(); expect(review).toHaveBeenCalledWith('shift-1'); expect(screen.queryByRole('button', { name: 'مراجعة الوردية' })).not.toBeInTheDocument();
     view.rerender(<ShiftReviewPanel loadShifts={async () => []} />); expect(await screen.findByText('لا توجد ورديات مغلقة للمراجعة.')).toBeInTheDocument(); view.rerender(<ShiftReviewPanel loadShifts={async () => { throw Error('offline'); }} />); expect(await screen.findByText('تعذر تحميل الورديات المغلقة.')).toBeInTheDocument(); view.rerender(<ShiftReviewPanel loadShifts={async () => [closed]} loadSummary={async () => { throw Error('offline'); }} reviewShift={async () => { throw Error('offline'); }} />); fireEvent.click(await screen.findByRole('button', { name: 'عرض إجمالي الدفتر' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر تحميل إجمالي الوردية'); fireEvent.click(screen.getByRole('button', { name: 'مراجعة الوردية' })); expect(await screen.findByRole('alert')).toHaveTextContent('تعذر مراجعة الوردية');
   });
 

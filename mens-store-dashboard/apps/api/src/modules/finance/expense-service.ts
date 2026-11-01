@@ -15,7 +15,7 @@ export type PostExpenseCommand = PostedExpense & { actorUserId: string; idempote
 
 export interface ExpenseRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PostedExpense | null>;
-  post(command: PostExpenseCommand): Promise<PostedExpense>;
+  post(command: PostExpenseCommand): Promise<{ok:true;expense:PostedExpense;replayed:boolean}|{ok:false;reason:'ACTOR_UNAVAILABLE'}>;
 }
 
 export function createExpenseService(repository: ExpenseRepository) {
@@ -23,8 +23,7 @@ export function createExpenseService(repository: ExpenseRepository) {
     async post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateExpenseInput) {
       const existing = await repository.findByIdempotencyKey(organizationId, idempotencyKey);
       if (existing) return { ok: true as const, expense: existing, replayed: true };
-      const expense = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, ...input });
-      return { ok: true as const, expense, replayed: false };
+      return repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, ...input });
     }
   };
 }

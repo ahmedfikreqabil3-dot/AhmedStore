@@ -9,7 +9,7 @@ const expense: PostedExpense = { id: 'f710274a-4b51-49bd-a31f-d6a8ab81b01a', org
 function repository(overrides: Partial<ExpenseRepository> = {}): ExpenseRepository {
   return {
     findByIdempotencyKey: async () => null,
-    post: async ({ actorUserId: _actorUserId, idempotencyKey: _idempotencyKey, ...posted }) => posted,
+    post: async ({ actorUserId: _actorUserId, idempotencyKey: _idempotencyKey, ...posted }) => ({ok:true,expense:posted,replayed:false}),
     ...overrides
   };
 }
@@ -22,7 +22,7 @@ describe('expense service', () => {
 
   it('posts a tenant-scoped expense with actor and idempotency context', async () => {
     let command: unknown;
-    const service = createExpenseService(repository({ post: async (posted) => { command = posted; const { actorUserId: _actorUserId, idempotencyKey: _idempotencyKey, ...stored } = posted; return stored; } }));
+    const service = createExpenseService(repository({ post: async (posted) => { command = posted; const { actorUserId: _actorUserId, idempotencyKey: _idempotencyKey, ...stored } = posted; return {ok:true,expense:stored,replayed:false}; } }));
     const result = await service.post(organizationId, actorUserId, 'expense-1', input);
     expect(result).toMatchObject({ ok: true, replayed: false, expense: { organizationId, ...input } });
     expect(command).toMatchObject({ id: expect.any(String), organizationId, actorUserId, idempotencyKey: 'expense-1', ...input });

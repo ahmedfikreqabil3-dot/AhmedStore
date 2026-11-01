@@ -10,7 +10,7 @@ export interface ReturnsRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PostedReturn | null>;
   findSale(id: string, organizationId: string): Promise<ReturnableSale | null>;
   returnedQuantity(saleLineId: string, organizationId: string): Promise<string>;
-  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreateInvoiceReturnInput; sale: ReturnableSale; calculated: CalculatedReturn }): Promise<{ ok: true; salesReturn: PostedReturn } | { ok: false; reason: 'PAYMENT_TOTAL_MISMATCH' | 'RETURN_QUANTITY_EXCEEDED' }>;
+  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreateInvoiceReturnInput; sale: ReturnableSale; calculated: CalculatedReturn }): Promise<{ ok: true; salesReturn: PostedReturn; replayed?:boolean } | { ok: false; reason: 'PAYMENT_TOTAL_MISMATCH' | 'RETURN_QUANTITY_EXCEEDED' | 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'ACTOR_UNAVAILABLE' | 'IDEMPOTENCY_KEY_CONFLICT' }>;
 }
 
 function decimalToUnits(value: string) {
@@ -20,7 +20,7 @@ function decimalToUnits(value: string) {
 
 export type PostInvoiceReturnResult =
   | { ok: true; salesReturn: PostedReturn; replayed: boolean }
-  | { ok: false; reason: 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'RETURN_QUANTITY_EXCEEDED' | 'PAYMENT_TOTAL_MISMATCH' };
+  | { ok: false; reason: 'SALE_UNAVAILABLE' | 'SALE_LINE_UNAVAILABLE' | 'RETURN_QUANTITY_EXCEEDED' | 'PAYMENT_TOTAL_MISMATCH' | 'ACTOR_UNAVAILABLE' | 'IDEMPOTENCY_KEY_CONFLICT' };
 
 export function createInvoiceReturnService(repository: ReturnsRepository) {
   return {
@@ -38,7 +38,7 @@ export function createInvoiceReturnService(repository: ReturnsRepository) {
         if (requested + returned > decimalToUnits(saleLine.quantity)) return { ok: false, reason: 'RETURN_QUANTITY_EXCEEDED' };
       }
       const posted = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, sale, calculated: calculateInvoiceReturn(sale, input) });
-      return posted.ok ? { ok: true, salesReturn: posted.salesReturn, replayed: false } : posted;
+      return posted.ok ? { ok: true, salesReturn: posted.salesReturn, replayed: posted.replayed ?? false } : posted;
     }
   };
 }

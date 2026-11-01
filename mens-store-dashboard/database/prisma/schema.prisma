@@ -29,6 +29,11 @@ model Organization {
   treasuryTransactions TreasuryTransaction[]
   expenses Expense[]
   shifts Shift[]
+  inventoryTransfers InventoryTransfer[]
+  stockCounts StockCount[]
+  stockThresholds StockThreshold[]
+  customerLedgerEntries CustomerLedgerEntry[]
+  dataImports DataImport[]
 }
 
 enum Role {
@@ -111,9 +116,29 @@ model User {
   updatedAt      DateTime     @updatedAt
   sessions       Session[]
   auditEvents    AuditEvent[]
+  inventoryTransfers InventoryTransfer[]
+  stockCounts StockCount[]
 
   @@unique([organizationId, email])
+  @@unique([organizationId, id], map: "User_org_id_key")
   @@index([organizationId, role])
+  ownedShifts Shift[] @relation("ShiftOwner")
+  dataImports DataImport[] @relation("ImportActor")
+}
+
+model DataImport {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  actorUserId String
+  actor User @relation("ImportActor",fields:[organizationId,actorUserId],references:[organizationId,id],onDelete:Restrict)
+  kind String
+  idempotencyKey String @db.VarChar(200)
+  contentHash String @db.Char(64)
+  importedCount Int
+  createdAt DateTime @default(now())
+  @@unique([organizationId,kind,idempotencyKey],map:"DataImport_org_kind_key_key")
+  @@index([organizationId,createdAt,id],map:"DataImport_org_created_idx")
 }
 
 model Session {
@@ -140,6 +165,8 @@ model AuditEvent {
   action         String
   entityType     String
   entityId       String?
+  details        Json?
+  requestId      String?
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
@@ -180,11 +207,15 @@ model Product {
   returnLines ReturnLine[]
   purchaseLines PurchaseLine[]
   purchaseReturnLines PurchaseReturnLine[]
+  inventoryTransfers InventoryTransfer[]
 
   @@unique([organizationId, sku])
   @@unique([organizationId, barcode])
+  @@unique([organizationId, id], map: "Product_org_id_key")
   @@index([organizationId, active])
   @@index([organizationId, categoryId])
+  stockCountLines StockCountLine[]
+  stockThresholds StockThreshold[]
 }
 
 model Warehouse {
@@ -200,9 +231,14 @@ model Warehouse {
   salesReturns SalesReturn[]
   purchases Purchase[]
   purchaseReturns PurchaseReturn[]
+  outgoingTransfers InventoryTransfer[] @relation("TransferSource")
+  incomingTransfers InventoryTransfer[] @relation("TransferDestination")
 
   @@unique([organizationId, name])
+  @@unique([organizationId, id], map: "Warehouse_org_id_key")
   @@index([organizationId, active])
+  stockCounts StockCount[]
+  stockThresholds StockThreshold[]
 }
 
 model Customer {
@@ -222,10 +258,31 @@ model Customer {
   updatedAt      DateTime @updatedAt
   sales          Sale[]
   salesReturns   SalesReturn[]
+  ledgerEntries  CustomerLedgerEntry[]
 
   @@unique([organizationId, legacyId])
+  @@unique([organizationId, id], map: "Customer_org_id_key")
   @@index([organizationId, active, name])
   @@index([organizationId, phone])
+}
+
+// Signed immutable customer debt movements: positive increases the receivable.
+model CustomerLedgerEntry {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+  type           String
+  amount         Decimal @db.Decimal(19, 4)
+  sourceType     String
+  sourceId       String
+  actorUserId    String
+  occurredAt     DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, type, sourceType, sourceId])
+  @@index([organizationId, customerId, occurredAt, id])
 }
 
 model Supplier {
@@ -531,6 +588,7 @@ model Shift {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   userId         String
+    owner          User @relation("ShiftOwner",fields:[organizationId,userId],references:[organizationId,id],onDelete:Restrict,map:"Shift_organizationId_userId_fkey")
   status         ShiftStatus @default(OPEN)
   openedAt       DateTime
   closedAt       DateTime?
@@ -543,7 +601,8 @@ model Shift {
   reviewedByUserId String?
   createdAt      DateTime    @default(now())
 
-  @@index([organizationId, userId, status])
+    // The one-OPEN-shift partial unique index is enforced by migration SQL.
+    @@index([organizationId, userId, status])
   @@index([organizationId, openedAt])
   @@index([organizationId, status, closedAt])
 }
@@ -567,4 +626,83 @@ model InventoryTransaction {
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, warehouseId, productId, occurredAt])
   @@index([organizationId, productId, occurredAt])
+  stockCountLine StockCountLine?
+  @@unique([organizationId,id],map:"InventoryTransaction_org_id_key")
+}
+
+model InventoryTransfer {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  sourceWarehouseId String
+  sourceWarehouse Warehouse @relation("TransferSource",fields:[organizationId,sourceWarehouseId],references:[organizationId,id],onDelete:Restrict,map:"InventoryTransfer_sourceWarehouseId_fkey")
+  destinationWarehouseId String
+  destinationWarehouse Warehouse @relation("TransferDestination",fields:[organizationId,destinationWarehouseId],references:[organizationId,id],onDelete:Restrict,map:"InventoryTransfer_destinationWarehouseId_fkey")
+  productId String
+  product Product @relation(fields:[organizationId,productId],references:[organizationId,id],onDelete:Restrict,map:"InventoryTransfer_productId_fkey")
+  productName String
+  sku String
+  quantity Decimal @db.Decimal(19,4)
+  reason String
+  actorUserId String
+  actor User @relation(fields:[organizationId,actorUserId],references:[organizationId,id],onDelete:Restrict,map:"InventoryTransfer_actorUserId_fkey")
+  idempotencyKey String
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([organizationId,idempotencyKey])
+  @@index([organizationId,occurredAt])
+  @@index([organizationId,sourceWarehouseId,occurredAt], map: "InventoryTransfer_org_source_occurred_idx")
+  @@index([organizationId,destinationWarehouseId,occurredAt], map: "InventoryTransfer_org_destination_occurred_idx")
+  @@index([organizationId,productId,occurredAt], map: "InventoryTransfer_org_product_occurred_idx")
+}
+
+model StockCount {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  warehouseId String
+  warehouse Warehouse @relation(fields:[organizationId,warehouseId],references:[organizationId,id],onDelete:Restrict)
+  actorUserId String
+  actor User @relation(fields:[organizationId,actorUserId],references:[organizationId,id],onDelete:Restrict)
+  idempotencyKey String
+  reason String
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  lines StockCountLine[]
+  @@unique([organizationId,id])
+  @@unique([organizationId,idempotencyKey])
+  @@index([organizationId,occurredAt,id])
+}
+model StockCountLine {
+  id String @id @default(uuid())
+  organizationId String
+  stockCountId String
+  stockCount StockCount @relation(fields:[organizationId,stockCountId],references:[organizationId,id],onDelete:Restrict)
+  productId String
+  product Product @relation(fields:[organizationId,productId],references:[organizationId,id],onDelete:Restrict)
+  productName String
+  sku String
+  expectedQuantity Decimal @db.Decimal(19,4)
+  countedQuantity Decimal @db.Decimal(19,4)
+  difference Decimal @db.Decimal(19,4)
+  inventoryTransactionId String?
+  inventoryTransaction InventoryTransaction? @relation(fields:[organizationId,inventoryTransactionId],references:[organizationId,id],onDelete:Restrict)
+  @@unique([organizationId,stockCountId,productId])
+  @@unique([organizationId,inventoryTransactionId])
+}
+
+model StockThreshold {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  productId String
+  product Product @relation(fields:[organizationId,productId],references:[organizationId,id],onDelete:Restrict)
+  warehouseId String
+  warehouse Warehouse @relation(fields:[organizationId,warehouseId],references:[organizationId,id],onDelete:Restrict)
+  minimum Decimal @db.Decimal(19,4)
+  version Int @default(1)
+  updatedAt DateTime @default(now()) @updatedAt
+  @@unique([organizationId,warehouseId,productId])
+  @@index([organizationId,productId])
 }

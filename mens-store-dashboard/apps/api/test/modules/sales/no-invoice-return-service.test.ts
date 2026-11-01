@@ -13,10 +13,15 @@ const product = { id: productId, organizationId, categoryId: null, name: 'Oxford
 const pending = { id: 'b89ef3a7-9625-4d29-bcf0-1ac0ba2db0f2', organizationId, total: '20.0000', status: 'PENDING_APPROVAL' as const };
 
 function repository(overrides: Partial<NoInvoiceReturnsRepository> = {}): NoInvoiceReturnsRepository {
-  return { findByIdempotencyKey: async () => null, findCustomer: async () => customer, findWarehouse: async () => warehouse, findProducts: async () => [product], createPending: async () => pending, ...overrides };
+  return { findByIdempotencyKey: async () => null, findCustomer: async () => customer, findWarehouse: async () => warehouse, findProducts: async () => [product], createPending: async () => ({ok:true,salesReturn:pending,replayed:false}), ...overrides };
 }
 
 describe('no-invoice return service', () => {
+  it('replays approved/voided requests truthfully and refuses voided approval candidates',async()=>{
+    for(const status of ['POSTED','VOIDED'] as const)expect(await createNoInvoiceReturnService(repository({findByIdempotencyKey:async()=>({...pending,status})})).submit(organizationId,actorUserId,'prior-key',input)).toEqual({ok:true,salesReturn:{...pending,status},replayed:true});
+    expect(await createNoInvoiceApprovalService({listPending:async()=>[],findPending:async()=>({...pending,status:'VOIDED'}),approve:async()=>{throw Error('Must not approve');}}).approve(organizationId,actorUserId,pending.id)).toEqual({ok:false,reason:'RETURN_NOT_PENDING'});
+    expect(await createNoInvoiceReturnService(repository({createPending:async()=>({ok:false,reason:'ACTOR_UNAVAILABLE'})})).submit(organizationId,actorUserId,'not-allowed',input)).toEqual({ok:false,reason:'ACTOR_UNAVAILABLE'});
+  });
   it('replays an existing pending request without revalidating master data', async () => {
     await expect(createNoInvoiceReturnService(repository({ findByIdempotencyKey: async () => pending, findCustomer: async () => { throw new Error('must not load'); } })).submit(organizationId, actorUserId, 'retry-1', input)).resolves.toEqual({ ok: true, salesReturn: pending, replayed: true });
   });
@@ -36,7 +41,7 @@ describe('no-invoice return service', () => {
 
   it('creates a pending approval request with the manager-entered total', async () => {
     let command: unknown;
-    const service = createNoInvoiceReturnService(repository({ createPending: async (received) => { command = received; return pending; } }));
+    const service = createNoInvoiceReturnService(repository({ createPending: async (received) => { command = received; return {ok:true,salesReturn:pending,replayed:false}; } }));
     await expect(service.submit(organizationId, actorUserId, 'key-1', input)).resolves.toEqual({ ok: true, salesReturn: pending, replayed: false });
     expect(command).toMatchObject({ id: expect.any(String), organizationId, actorUserId, idempotencyKey: 'key-1', total: '20.0000', input });
   });

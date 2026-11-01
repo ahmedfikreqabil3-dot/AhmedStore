@@ -12,14 +12,14 @@ export interface PurchaseRepository {
   findWarehouse(id: string, organizationId: string): Promise<Warehouse | null>;
   findProducts(ids: string[], organizationId: string): Promise<Product[]>;
   findProductsByBarcodes(barcodes: string[], organizationId: string): Promise<Product[]>;
-  post(command: PostPurchaseCommand): Promise<PostedPurchase>;
+  post(command: PostPurchaseCommand): Promise<PostPurchaseResult>;
   list?(organizationId: string): Promise<Array<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date }>>;
   find?(organizationId: string, purchaseId: string): Promise<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date; lines: Array<{ id: string; lineNumber: number; productId: string; productName: string; sku: string; barcode: string | null; quantity: string; unitCost: string; total: string }> } | null>;
 }
 
 export type PostPurchaseResult =
   | { ok: true; purchase: PostedPurchase; replayed: boolean }
-  | { ok: false; reason: 'SUPPLIER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'PAYMENT_TOTAL_MISMATCH' };
+  | { ok: false; reason: 'SUPPLIER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'ACTOR_UNAVAILABLE' | 'PAYMENT_TOTAL_MISMATCH' };
 
 function paymentUnits(amount: string) {
   const [whole, fraction = ''] = amount.split('.');
@@ -50,8 +50,7 @@ export function createPurchaseService(repository: PurchaseRepository) {
       const calculated = calculatePurchase(resolvedLines as ResolvedPurchaseLine[]);
       const paid = input.payments.reduce((total, payment) => total + paymentUnits(payment.amount), 0n);
       if (paid !== paymentUnits(calculated.total)) return { ok: false, reason: 'PAYMENT_TOTAL_MISMATCH' };
-      const purchase = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input: { ...input, lines: resolvedLines as ResolvedPurchaseLine[] }, calculated, products: byId });
-      return { ok: true, purchase, replayed: false };
+      return repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input: { ...input, lines: resolvedLines as ResolvedPurchaseLine[] }, calculated, products: byId });
     }
   };
 }

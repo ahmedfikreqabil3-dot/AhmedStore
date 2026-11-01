@@ -1,0 +1,39 @@
+import { usePreviewDialog } from './usePreviewDialog.js';
+import { useEffect, useRef, useState } from 'react';
+import { Icon } from '../src/ui/Icon.js';
+type Line={id:number;product:string;quantity:string;price:string;discount:string};
+const catalogue=['قميص أوكسفورد','بنطلون تشينو','تيشيرت بولو'];
+const units=(value:string)=>/^\d{1,15}(?:\.\d{1,4})?$/.test(value) ? BigInt(value.split('.')[0]!)*10000n+BigInt((value.split('.')[1] ?? '').padEnd(4,'0')) : null;
+const decimal=(value:bigint)=>`${value/10000n}.${(value%10000n).toString().padStart(4,'0')}`;
+export function DraftDocumentJourney({kind,reference,close,complete}:{kind:'quotation'|'purchase-order';reference?:string;close:()=>void;complete:()=>void}){
+  const dialog=useRef<HTMLDialogElement>(null);const heading=useRef<HTMLHeadingElement>(null);const sequence=useRef(2);
+  const purchase=kind==='purchase-order';const [documentType,setDocumentType]=useState('عرض سعر');const [party,setParty]=useState('');const [warehouse,setWarehouse]=useState('الفرع الرئيسي');
+  const [issued,setIssued]=useState('2026-10-30');const [due,setDue]=useState('2026-11-05');const [notes,setNotes]=useState('');
+  const [lines,setLines]=useState<Line[]>([{id:1,product:catalogue[0]!,quantity:'1',price:purchase ? '420' : '690',discount:'0'}]);
+  const [review,setReview]=useState(false);const [dirty,setDirty]=useState(false);const [discard,setDiscard]=useState(false);const [error,setError]=useState('');
+  usePreviewDialog(dialog);useEffect(()=>{if(review)heading.current?.focus();},[review]);
+  const closeDraft=()=>dirty ? setDiscard(true) : close();
+  function update(id:number,field:Exclude<keyof Line,'id'>,value:string){setDirty(true);setLines(rows=>rows.map(row=>row.id===id ? {...row,[field]:value} : row));}
+  function lineTotal(line:Line){const quantity=units(line.quantity),price=units(line.price),discount=units(line.discount);if(quantity===null||price===null||discount===null||quantity===0n)return null;const subtotal=(quantity*price+5000n)/10000n;return discount<=subtotal ? subtotal-discount : null;}
+  const totals=lines.map(lineTotal);const total=totals.reduce<bigint>((sum,value)=>sum+(value ?? 0n),0n);
+  function next(){
+    if(!party||!issued||!due||due<issued){setError('اختار الطرف وحدد تاريخ مستند وتاريخ صلاحية أو توريد لا يسبقه.');return;}
+    if(lines.length===0||totals.some(value=>value===null)){setError('راجع الأصناف: كمية موجبة، وسعر وخصم غير سالبين حتى 4 منازل؛ الخصم لا يتجاوز قيمة السطر.');return;}
+    if(new Set(lines.map(line=>line.product)).size!==lines.length){setError('الصنف مكرر؛ اجمع كميته في سطر واحد.');return;}
+    setError('');setReview(true);
+  }
+  const title=purchase ? 'أصناف أمر الشراء' : 'أصناف عرض السعر أو الفاتورة المعلّقة';
+  return <dialog ref={dialog} className="planned-dialog document-journey" aria-labelledby="draft-document-title" onCancel={event=>{event.preventDefault();closeDraft();}}>
+    <header><h2 id="draft-document-title" ref={heading} tabIndex={-1}>{title}</h2><button className="icon-button" aria-label="إغلاق مسودة المستند" onClick={closeDraft}><Icon name="close"/></button></header>
+    <p className="planned-review-note">تصميم بمحتوى توضيحي{reference ? ` للمستند ${reference}` : ''}. لا يُحجز مخزون أو يُرحّل رصيد أو تُرسل طلبات للمورد. الإجماليات معاينة حتى 4 منازل عشرية، وتُراجع سياسة التقريب عند الربط.</p>
+    {discard&&<div role="alert" className="lifecycle-discard"><p>تجاهل تعديلات المسودة؟</p><button className="button secondary" onClick={()=>setDiscard(false)}>استكمال المسودة</button><button className="button secondary" onClick={close}>تجاهل المسودة وإغلاق</button></div>}
+    {review ? <><h3>مراجعة المسودة والأصناف</h3><dl className="planned-facts"><div><dt>نوع المستند</dt><dd>{purchase ? 'أمر شراء' : documentType}</dd></div><div><dt>{purchase ? 'المورد' : 'العميل'}</dt><dd>{party}</dd></div><div><dt>الفرع</dt><dd>{warehouse}</dd></div><div><dt>التاريخ</dt><dd>{issued}</dd></div><div><dt>{purchase ? 'التوريد المتوقع' : 'صالح حتى'}</dt><dd>{due}</dd></div>{lines.map((line,index)=><div key={line.id}><dt>{line.product} · {line.quantity} قطعة</dt><dd>{decimal(totals[index]!)} ج.م</dd></div>)}<div><dt>إجمالي المعاينة</dt><dd>{decimal(total)} ج.م</dd></div><div><dt>ملاحظات</dt><dd>{notes||'لا توجد ملاحظات'}</dd></div></dl><p>{purchase ? 'بعد اعتماد الأمر تأتي رحلة الاستلام الكلي أو الجزئي، دون استلام تلقائي عند حفظ الأمر.' : 'عند استكمال البيع تُراجع الأسعار والصلاحية والمخزون مرة أخرى قبل تأكيد الفاتورة.'}</p><footer><button className="button primary" onClick={complete}>تأكيد معاينة المسودة</button><button className="button secondary" onClick={()=>setReview(false)}>رجوع لأصناف المسودة</button></footer></> : <form noValidate onSubmit={event=>{event.preventDefault();next();}} onChange={()=>setDirty(true)}><div className="planned-fields lifecycle-editor">
+      {!purchase&&<label className="field">نوع المستند<select aria-label="نوع مسودة المستند" value={documentType} onChange={event=>setDocumentType(event.target.value)}><option>عرض سعر</option><option>فاتورة معلّقة</option></select></label>}
+      <label className="field">{purchase ? 'المورد' : 'العميل'}<select aria-label="طرف المسودة" value={party} onChange={event=>setParty(event.target.value)}><option value="">اختار {purchase ? 'المورد' : 'العميل'}</option>{(purchase ? ['شركة النخبة للملابس','مصنع الأصيل'] : ['أحمد محمود','محمد حسن']).map(value=><option key={value}>{value}</option>)}</select></label>
+      <label className="field">الفرع<select aria-label="فرع المسودة" value={warehouse} onChange={event=>setWarehouse(event.target.value)}><option>الفرع الرئيسي</option><option>فرع مدينة نصر</option></select></label>
+      <label className="field">تاريخ المستند<input aria-label="تاريخ المسودة" type="date" value={issued} onChange={event=>setIssued(event.target.value)}/></label><label className="field">{purchase ? 'موعد التوريد' : 'صالح حتى'}<input aria-label="تاريخ انتهاء المسودة" type="date" value={due} onChange={event=>setDue(event.target.value)}/></label>
+    </div><div className="table-wrap document-lines" role="region" aria-label="أصناف المسودة" tabIndex={0}><table className="data-table"><thead><tr>{['الصنف','الكمية',purchase ? 'التكلفة المتوقعة' : 'سعر الوحدة','خصم السطر','الإجمالي','الإجراء'].map(value=><th scope="col" key={value}>{value}</th>)}</tr></thead><tbody>{lines.map((line,index)=><tr key={line.id}><td><select aria-label={`صنف المسودة ${index+1}`} value={line.product} onChange={event=>update(line.id,'product',event.target.value)}>{catalogue.map(value=><option key={value}>{value}</option>)}</select></td>{(['quantity','price','discount'] as const).map((field,column)=><td key={field}><input aria-label={`${['كمية','سعر','خصم'][column]} المسودة ${index+1}`} inputMode="decimal" value={line[field]} onChange={event=>update(line.id,field,event.target.value)}/></td>)}<td>{totals[index]===null ? 'راجع القيم' : decimal(totals[index]!)}</td><td><button type="button" className="table-link" disabled={lines.length===1} aria-label={`حذف سطر المسودة ${index+1}`} onClick={()=>{setDirty(true);setLines(rows=>rows.filter(row=>row.id!==line.id));}}>حذف</button></td></tr>)}</tbody></table></div>
+    <button type="button" className="button secondary" onClick={()=>{setDirty(true);const id=sequence.current++;setLines(rows=>[...rows,{id,product:catalogue[1]!,quantity:'1',price:purchase ? '350' : '590',discount:'0'}]);}}>إضافة صنف للمسودة</button>
+    <label className="field">ملاحظات<textarea aria-label="ملاحظات المسودة" maxLength={500} rows={3} value={notes} onChange={event=>setNotes(event.target.value)}/></label><p>إجمالي المعاينة: <bdi>{decimal(total)}</bdi> ج.م</p>{error&&<p role="alert" className="lifecycle-error">{error}</p>}<footer><button className="button primary" type="submit">مراجعة أصناف المسودة</button><button className="button secondary" type="button" onClick={closeDraft}>إلغاء المسودة</button></footer></form>}
+  </dialog>;
+}

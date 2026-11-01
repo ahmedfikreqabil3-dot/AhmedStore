@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app.js';
+import type { createInventoryTransferService } from '../src/modules/inventory/transfer.js';
+import type { createStockCountService } from '../src/modules/inventory/count.js';
+import type { createStockThresholdService } from '../src/modules/inventory/threshold.js';
+import { describe, expect, it, vi } from 'vitest';
+import { buildApp, type ProductService, type CustomerService, type SupplierService } from '../src/app.js';
 
 const authenticationService = {
   login: async () => ({ ok: false as const, reason: 'INVALID_CREDENTIALS' as const }),
@@ -36,6 +39,141 @@ const salesService = { post: async () => ({ ok: false as const, reason: 'INSUFFI
 const successIdentity = { register: async () => ({ ok: true as const, user: registeredUser }), auditUserCreated: async () => undefined };
 
 describe('API health endpoint', () => {
+  it('composes customer-import authentication and the workbook parser through the application',async()=>{
+    const auth={...authenticationService,authenticate:async()=>({ok:true as const,token:'token',user:registeredUser})};
+    const imports={template:async()=>Buffer.from('template'),preview:async()=>({valid:true,rows:[],errors:[]}),import:async()=>({ok:true as const,imported:1,replayed:false})};
+    const app=await buildApp(successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,{...customerService,imports},salesService);
+    try{const response=await app.inject({method:'POST',url:'/api/v1/customers/import-preview',headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},payload:Buffer.from('workbook')});expect(response.statusCode).toBe(200);}finally{await app.close();}
+  });
+  it('authorizes paginated party directories and reasoned lifecycle changes with session-owned scope',async()=>{
+    const directory=vi.fn(async()=>({kind:'customers',parties:[],total:0,limit:25,offset:0})),lifecycle=vi.fn(async()=>({ok:true as const,party:{id:registeredUser.id,active:false,version:2}}));
+    const make=(role:'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'|null,mode:'live'|'absent'='live')=>{
+      const auth=role?{...authenticationService,authenticate:async()=>({ok:true as const,token:'token',user:{...registeredUser,role}})}:authenticationService;
+      return buildApp(successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,mode==='live'?{...customerService,directory:directory as any,lifecycle:lifecycle as any}:customerService,salesService,undefined,undefined,undefined,undefined,undefined,undefined,undefined,mode==='live'?{list:async()=>[],create:async()=>({ok:true as const,supplier:{} as any}),directory:directory as any,lifecycle:lifecycle as any}:undefined);
+    };
+    const payload={version:1,active:false,reason:'توقف التعامل'};
+    for(const role of [null,'ADMIN','MANAGER','WAREHOUSE','CASHIER','FINANCE'] as const){const app=await make(role);try{for(const kind of ['customers','suppliers']){
+      const allowed=role==='ADMIN'||role==='MANAGER'||(role==='WAREHOUSE'&&kind==='suppliers'),expected=role===null?401:allowed?200:403;
+      expect((await app.inject({method:'GET',url:`/api/v1/${kind}/directory?status=archived`})).statusCode).toBe(expected);
+      expect((await app.inject({method:'PATCH',url:`/api/v1/${kind}/${registeredUser.id}/lifecycle`,payload})).statusCode).toBe(expected);
+      if(allowed){expect(directory).toHaveBeenLastCalledWith(input.organizationId,{status:'archived',limit:25,offset:0});expect(lifecycle).toHaveBeenLastCalledWith(input.organizationId,registeredUser.id,registeredUser.id,payload);}
+    }}finally{await app.close();}}
+    const app=await make('ADMIN');try{
+      expect((await app.inject({method:'GET',url:'/api/v1/customers/directory?limit=101'})).statusCode).toBe(400);
+      for(const [id,body] of [['invalid',payload],[registeredUser.id,{...payload,reason:''}]] as const)expect((await app.inject({method:'PATCH',url:`/api/v1/customers/${id}/lifecycle`,payload:body})).statusCode).toBe(400);
+      lifecycle.mockResolvedValueOnce({ok:false,reason:'PARTY_NOT_FOUND'} as any);expect((await app.inject({method:'PATCH',url:`/api/v1/customers/${registeredUser.id}/lifecycle`,payload})).statusCode).toBe(404);
+      lifecycle.mockResolvedValueOnce({ok:false,reason:'OPEN_BALANCE'} as any);expect((await app.inject({method:'PATCH',url:`/api/v1/suppliers/${registeredUser.id}/lifecycle`,payload})).statusCode).toBe(409);
+    }finally{await app.close();}
+    const absent=await make('ADMIN','absent');try{for(const kind of ['customers','suppliers']){expect((await absent.inject({method:'GET',url:`/api/v1/${kind}/directory`})).statusCode).toBe(503);expect((await absent.inject({method:'PATCH',url:`/api/v1/${kind}/${registeredUser.id}/lifecycle`,payload})).statusCode).toBe(503);}}finally{await absent.close();}
+  },30000);
+  it('authorizes and validates expense-history reads without exposing another organization or missing wiring',async()=>{
+    const list=vi.fn(async()=>({expenses:[],total:0,totalAmount:'0.0000',limit:25,offset:0}));
+    const url='/api/v1/expenses?from=2026-10-01&to=2026-10-30';
+    const make=(role:'ADMIN'|'FINANCE'|'CASHIER'|null,mode:'live'|'no-method'|'absent'='live')=>buildApp(successIdentity,role?{...authenticationService,authenticate:async()=>({ok:true as const,token:'token',user:{...registeredUser,role}})}:authenticationService,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,undefined,undefined,undefined,undefined,undefined,undefined,mode==='absent'?undefined:{post:async()=>({ok:false as const,reason:'ACTOR_UNAVAILABLE'}),...(mode==='live'?{list}:{})});
+    for(const role of [null,'ADMIN','FINANCE','CASHIER'] as const){const app=await make(role);try{expect((await app.inject({method:'GET',url})).statusCode).toBe(role===null?401:role==='CASHIER'?403:200);}finally{await app.close();}}
+    expect(list).toHaveBeenLastCalledWith(input.organizationId,{from:new Date('2026-10-01'),to:new Date('2026-10-30'),limit:25,offset:0});
+    const app=await make('ADMIN');try{expect((await app.inject({method:'GET',url:url+'&organizationId=foreign'})).statusCode).toBe(400);list.mockRejectedValueOnce(Error('private SQL'));expect((await app.inject({method:'GET',url})).statusCode).toBe(500);}finally{await app.close();}
+    for(const mode of ['absent','no-method'] as const){const app=await make('ADMIN',mode);try{expect((await app.inject({method:'GET',url})).statusCode).toBe(503);}finally{await app.close();}}
+  },30000);
+  it('scopes account statement reads, validates dates and reports missing services and parties',async()=>{
+    const read=vi.fn(async()=>({party:{id:registeredUser.id}}));
+    const url=(kind:string)=>`/api/v1/${kind}/${registeredUser.id}/statement?from=2026-10-01&to=2026-10-30`;
+    const make=async(role:'ADMIN'|'FINANCE'|'WAREHOUSE'|'CASHIER'|null,available=true)=>{
+      const auth=role ? {...authenticationService,authenticate:async()=>({ok:true as const,token:'session',user:{...registeredUser,role}})} : authenticationService;
+      const customers=available ? {...customerService,statement:read as any} : customerService;
+      const suppliers=available ? {list:async()=>[],create:async()=>({ok:true as const,supplier:{} as any}),statement:read as any} : undefined;
+      return buildApp(successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customers,salesService,undefined,undefined,undefined,undefined,undefined,undefined,undefined,suppliers);
+    };
+    for(const role of [null,'ADMIN','FINANCE','WAREHOUSE','CASHIER'] as const){
+      const app=await make(role);
+      try{for(const kind of ['customers','suppliers']){
+        const allowed=role==='ADMIN'||role==='FINANCE'||(kind==='customers'?role==='CASHIER':role==='WAREHOUSE');
+        const response=await app.inject({method:'GET',url:url(kind)});
+        expect(response.statusCode).toBe(role===null?401:allowed?200:403);
+        if(allowed)expect(read).toHaveBeenLastCalledWith(input.organizationId,registeredUser.id,{from:new Date('2026-10-01'),to:new Date('2026-10-30'),limit:25,offset:0});
+      }}finally{await app.close();}
+    }
+    const app=await make('ADMIN');
+    try{
+      for(const bad of [url('customers').replace(registeredUser.id,'invalid'),url('suppliers')+'&organizationId=foreign',url('customers').replace('2026-10-01','2027-01-01')])expect((await app.inject({method:'GET',url:bad})).statusCode).toBe(400);
+      read.mockResolvedValueOnce(null as any);expect((await app.inject({method:'GET',url:url('customers')})).statusCode).toBe(404);
+      read.mockRejectedValueOnce(Error('private SQL'));expect((await app.inject({method:'GET',url:url('suppliers')})).statusCode).toBe(500);
+    }finally{await app.close();}
+    const missing=await make('ADMIN',false);
+    try{for(const kind of ['customers','suppliers'])expect((await missing.inject({method:'GET',url:url(kind)})).statusCode).toBe(503);}finally{await missing.close();}
+  });
+  it('authorizes and validates product PATCH using only session ownership and actor', async () => {
+    const id = registeredUser.id;
+    const payload = { name: 'Shirt', sku: 'sh-1', barcode: null, categoryId: null, salePrice: '20.1234', costPrice: '10', version: 1 };
+    let role: 'ADMIN' | 'MANAGER' | 'WAREHOUSE' | 'CASHIER' | 'FINANCE' = 'ADMIN';
+    let signedIn = false;
+    const auth = { ...authenticationService, authenticate: async () => signedIn ? ({ ok: true as const, token: 'token', user: { ...registeredUser, role } }) : ({ ok: false as const, reason: 'UNAUTHENTICATED' as const }) };
+    const product = { id, organizationId: input.organizationId, ...payload, sku: 'SH-1', active: true, version: 2 };
+    const update = vi.fn<NonNullable<ProductService['update']>>().mockResolvedValue({ ok: true, product });
+    const app = await buildApp(successIdentity, auth, userDirectoryService, categoryService, { ...productService, update }, warehouseService, stockService, inventoryMovementService, customerService, salesService);
+    const call = (body: object = payload, productId = id) => app.inject({ method: 'PATCH', url: `/api/v1/products/${productId}`, payload: body });
+    try {
+      expect((await call()).statusCode).toBe(401); signedIn = true;
+      for (const forbidden of ['CASHIER', 'FINANCE'] as const) { role = forbidden; expect((await call()).statusCode).toBe(403); }
+      expect(update).not.toHaveBeenCalled(); role = 'ADMIN';
+      for (const body of [{}, { ...payload, organizationId: id }, { ...payload, quantity: '4' }, { ...payload, active: false }, { ...payload, version: 0 }, { ...payload, salePrice: '-1' }]) expect((await call(body)).statusCode).toBe(400);
+      expect((await call(payload, 'invalid')).statusCode).toBe(400);
+      expect(update).not.toHaveBeenCalled();
+      for (const allowed of ['ADMIN', 'MANAGER', 'WAREHOUSE'] as const) { role = allowed; const response = await call(); expect(response.statusCode).toBe(200); expect(response.json()).toEqual(product); }
+      expect(update).toHaveBeenCalledWith(input.organizationId, id, id, { ...payload, sku: 'SH-1' });
+      update.mockResolvedValueOnce({ ok: false, reason: 'PRODUCT_NOT_FOUND' }); expect((await call()).statusCode).toBe(404);
+      update.mockResolvedValueOnce({ ok: false, reason: 'VERSION_CONFLICT' }); const conflict = await call(); expect(conflict.statusCode).toBe(409); expect(conflict.json()).toEqual({ error: 'VERSION_CONFLICT' });
+      update.mockRejectedValueOnce(Error('database unavailable')); expect((await call()).statusCode).toBe(500);
+    } finally { await app.close(); }
+    const unavailable = await buildApp(successIdentity, auth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService);
+    try { expect((await unavailable.inject({ method: 'PATCH', url: `/api/v1/products/${id}`, payload })).statusCode).toBe(503); }
+    finally { await unavailable.close(); }
+  }, 30000);
+  it('limits POS options to authenticated sellers, active tenant records, and sale-only fields', async () => {
+    const otherId = '4b411dac-9da0-4744-ae12-49c40e24d6b7';
+    const products = [input.organizationId, otherId].flatMap((organizationId) => [true, false].map((active) => ({
+      id: `${organizationId}-product-${active}`, organizationId, name: 'Tenant shirt', sku: 'SH-1', barcode: '123',
+      categoryId: null, salePrice: '19.9500', costPrice: '10.0000', active, version: 1
+    })));
+    const customers = [input.organizationId, otherId].flatMap((organizationId) => [true, false].map((active) => ({
+      id: `${organizationId}-customer-${active}`, organizationId, legacyId: null, name: 'Tenant customer',
+      phone: 'private phone', email: 'private@example.test', address: 'private address', notes: 'private notes', creditLimit: '1000.0000', active, version: 1
+    })));
+    const warehouses = [input.organizationId, otherId].flatMap((organizationId) => [true, false].map((active) => ({ id: `${organizationId}-warehouse-${active}`, organizationId, name: 'Tenant branch', active })));
+    const productList = vi.fn(async (organizationId: string) => products.filter((item) => item.organizationId === organizationId));
+    const customerList = vi.fn(async (organizationId: string) => customers.filter((item) => item.organizationId === organizationId));
+    const warehouseList = vi.fn(async (organizationId: string) => warehouses.filter((item) => item.organizationId === organizationId));
+    const services = [{ ...productService, list: productList }, { ...customerService, list: customerList }, { ...warehouseService, list: warehouseList }] as const;
+    const anonymous = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, services[0], services[2], stockService, inventoryMovementService, services[1], salesService);
+    expect((await anonymous.inject({ method: 'GET', url: '/api/v1/pos/options' })).statusCode).toBe(401);
+    await anonymous.close();
+    for (const role of ['ADMIN', 'MANAGER', 'CASHIER', 'WAREHOUSE', 'FINANCE'] as const) {
+      const auth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role } }) };
+      const app = await buildApp(successIdentity, auth, userDirectoryService, categoryService, services[0], services[2], stockService, inventoryMovementService, services[1], salesService);
+      const response = await app.inject({ method: 'GET', url: `/api/v1/pos/options?organizationId=${otherId}` });
+      if (role === 'FINANCE' || role === 'WAREHOUSE') expect(response.statusCode).toBe(403);
+      else {
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+          products: [{ id: `${input.organizationId}-product-true`, name: 'Tenant shirt', sku: 'SH-1', barcode: '123', salePrice: '19.9500' }],
+          customers: [{ id: `${input.organizationId}-customer-true`, name: 'Tenant customer' }],
+          warehouses: [{ id: `${input.organizationId}-warehouse-true`, name: 'Tenant branch' }]
+        });
+        expect(productList).toHaveBeenLastCalledWith(input.organizationId);
+        expect(customerList).toHaveBeenLastCalledWith(input.organizationId);
+        expect(warehouseList).toHaveBeenLastCalledWith(input.organizationId);
+      }
+      if (role === 'CASHIER') {
+        for (const url of ['/api/v1/products', '/api/v1/warehouses', '/api/v1/inventory/stock', '/api/v1/purchases', '/api/v1/users']) expect((await app.inject({ method: 'GET', url })).statusCode).toBe(403);
+        for (const url of ['/api/v1/products', '/api/v1/warehouses', '/api/v1/inventory/movements']) expect((await app.inject({ method: 'POST', url, payload: {} })).statusCode).toBe(403);
+      }
+      await app.close();
+    }
+    expect(productList).toHaveBeenCalledTimes(3);
+    expect(customerList).toHaveBeenCalledTimes(3);
+    expect(warehouseList).toHaveBeenCalledTimes(3);
+  }, 30000);
+
   it('returns the versioned API health response', async () => {
     const app = await buildApp(successIdentity, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService);
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
@@ -413,7 +551,7 @@ describe('API health endpoint', () => {
   it('posts validated idempotent expenses only for Finance or Admin', async () => {
     const body = { category: 'Utilities', description: 'Electricity bill', paymentMethod: 'CASH' as const, amount: '250.5000', occurredAt: '2026-01-01T00:00:00.000Z' };
     const expense = { id: '9f112860-9eb3-402f-b722-740616412a85', organizationId: input.organizationId, ...body, occurredAt: new Date(body.occurredAt) };
-    const expenses = { post: async (_organizationId: string, _actorUserId: string, key: string) => ({ ok: true as const, expense, replayed: key === 'replay' }) };
+    const expenses = { post: async (_organizationId: string, _actorUserId: string, key: string) => key==='actor-conflict' ? ({ok:false as const,reason:'ACTOR_UNAVAILABLE'}) : ({ ok: true as const, expense, replayed: key === 'replay' }) };
     const financeAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'FINANCE' as const } }) };
     const cashierAuth = { ...authenticationService, authenticate: async () => ({ ok: true as const, token: 'token', user: { ...registeredUser, role: 'CASHIER' as const } }) };
     const finance = await buildApp(successIdentity, financeAuth, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, expenses);
@@ -426,7 +564,9 @@ describe('API health endpoint', () => {
     expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'expense-1' }, payload: {} })).statusCode).toBe(400);
     expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'expense-1' }, payload: body })).statusCode).toBe(201);
     expect((await finance.inject({ method: 'POST', url: '/api/v1/expenses', headers: { cookie: 'session=token', 'idempotency-key': 'replay' }, payload: body })).statusCode).toBe(200);
-    await Promise.all([finance.close(), cashier.close(), anonymous.close()]);
+    expect((await finance.inject({method:'POST',url:'/api/v1/expenses',headers:{'idempotency-key':'actor-conflict'},payload:body})).statusCode).toBe(409);
+    const unavailable=await buildApp(successIdentity,financeAuth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService);expect((await unavailable.inject({method:'POST',url:'/api/v1/expenses',payload:body})).statusCode).toBe(503);
+    await Promise.all([finance.close(), cashier.close(), anonymous.close(),unavailable.close()]);
   });
 
   it('lists and creates suppliers only for purchasing roles', async () => {
@@ -543,4 +683,106 @@ describe('API health endpoint', () => {
     expect((await anonymous.inject({ method: 'GET', url: '/api/v1/purchases/purchase-1' })).statusCode).toBe(401); expect((await cashier.inject({ method: 'GET', url: '/api/v1/purchases/purchase-1', headers: { cookie: 'session=token' } })).statusCode).toBe(403); expect((await unavailable.inject({ method: 'GET', url: '/api/v1/purchases/purchase-1', headers: { cookie: 'session=token' } })).statusCode).toBe(503); expect((await admin.inject({ method: 'GET', url: '/api/v1/purchases/missing', headers: { cookie: 'session=token' } })).statusCode).toBe(404); expect((await admin.inject({ method: 'GET', url: '/api/v1/purchases/purchase-1', headers: { cookie: 'session=token' } })).json()).toMatchObject({ purchase: { id: purchase.id, lines: [{ id: 'line-1', productName: 'Shirt' }] } });
     await Promise.all([admin.close(), cashier.close(), anonymous.close(), unavailable.close()]);
   });
+});
+
+
+it('authorizes versioned customer/supplier updates without granting cashier credit-limit edits',async()=>{
+  let role: 'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'='ADMIN';let signedIn=false;
+  const auth={...authenticationService,authenticate:async()=>signedIn ? ({ok:true as const,token:'token',user:{...registeredUser,role}}) : ({ok:false as const,reason:'UNAUTHENTICATED' as const})};
+  const fields={name:'Updated party',phone:null,email:null,address:null,notes:null,version:1};
+  const customer={...fields,id:registeredUser.id,organizationId:input.organizationId,legacyId:null,creditLimit:'20.0000',active:true,version:2};
+  const supplier={...fields,id:registeredUser.id,organizationId:input.organizationId,active:true,version:2};
+  const updateCustomer=vi.fn<NonNullable<CustomerService['update']>>().mockResolvedValue({ok:true,party:customer});
+  const updateSupplier=vi.fn<NonNullable<SupplierService['update']>>().mockResolvedValue({ok:true,party:supplier});
+  const customers={...customerService,update:updateCustomer};
+  const suppliers:SupplierService={list:async()=>[],create:async()=>({ok:true,supplier}),update:updateSupplier};
+  const build=(customerApi:CustomerService,supplierApi?:SupplierService)=>buildApp(successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerApi,salesService,undefined,undefined,undefined,undefined,undefined,undefined,undefined,supplierApi);
+  const app=await build(customers,suppliers);
+  try{
+    for(const kind of ['customers','suppliers']){
+      const payload=kind==='customers' ? {...fields,creditLimit:'20.0000'} : fields;
+      const call=(body:object=payload,id=registeredUser.id)=>app.inject({method:'PATCH',url:'/api/v1/'+kind+'/'+id,payload:body});
+      signedIn=false;expect((await call()).statusCode).toBe(401);signedIn=true;
+      for(const forbidden of (kind==='customers' ? ['CASHIER','FINANCE','WAREHOUSE'] : ['CASHIER','FINANCE']) as Array<'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'>){role=forbidden;expect((await call()).statusCode).toBe(403);}
+      role='ADMIN';for(const body of [{},{...payload,active:false},{...payload,organizationId:registeredUser.id},{...payload,version:0}])expect((await call(body)).statusCode).toBe(400);
+      expect((await call(payload,'bad')).statusCode).toBe(400);
+      for(const allowed of (kind==='customers' ? ['ADMIN','MANAGER'] : ['ADMIN','MANAGER','WAREHOUSE']) as Array<'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'>){role=allowed;expect((await call()).statusCode).toBe(200);}
+      const update=kind==='customers' ? updateCustomer : updateSupplier;
+      expect(update).toHaveBeenCalledWith(input.organizationId,registeredUser.id,registeredUser.id,payload);
+      update.mockResolvedValueOnce({ok:false,reason:'PARTY_NOT_FOUND'});expect((await call()).statusCode).toBe(404);
+      update.mockResolvedValueOnce({ok:false,reason:'VERSION_CONFLICT'});expect((await call()).statusCode).toBe(409);
+    }
+  }finally{await app.close();}
+  role='ADMIN';const unavailable=await build(customerService,{...suppliers,update:undefined});
+  try{expect((await unavailable.inject({method:'PATCH',url:'/api/v1/customers/'+registeredUser.id,payload:{...fields,creditLimit:'0'}})).statusCode).toBe(503);expect((await unavailable.inject({method:'PATCH',url:'/api/v1/suppliers/'+registeredUser.id,payload:fields})).statusCode).toBe(503);}finally{await unavailable.close();}
+  const absent=await build(customerService);try{expect((await absent.inject({method:'PATCH',url:'/api/v1/suppliers/'+registeredUser.id,payload:fields})).statusCode).toBe(503);}finally{await absent.close();}
+},30000);
+
+
+it('scopes and authorizes atomic transfer reads/posts, validates keys and returns explicit replay status',async()=>{
+  let signedIn=false;let role:'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'='ADMIN';
+  const auth={...authenticationService,authenticate:async()=>signedIn ? ({ok:true as const,token:'token',user:{...registeredUser,role}}) : ({ok:false as const,reason:'UNAUTHENTICATED' as const})};
+  const payload={productId:registeredUser.id,sourceWarehouseId:registeredUser.id,destinationWarehouseId:input.organizationId,quantity:'1.1250',reason:'Transfer stock',occurredAt:'2026-10-30T10:00:00.000Z'};
+  const transfer={...payload,id:registeredUser.id,organizationId:input.organizationId,actorUserId:registeredUser.id,productName:'Shirt',sku:'SH-1',occurredAt:new Date(payload.occurredAt),createdAt:new Date(payload.occurredAt)};
+  const service:ReturnType<typeof createInventoryTransferService>={list:vi.fn(async(_organizationId,query)=>({transfers:[transfer],total:1,...query})),post:vi.fn(async()=>({ok:true as const,transfer,replayed:false}))};
+  const build=(transfers?:typeof service)=>buildApp(...([successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,...Array(16).fill(undefined),transfers] as unknown as Parameters<typeof buildApp>));
+  const app=await build(service);
+  const post=(body:object=payload,key:string|null='transfer-key')=>app.inject({method:'POST',url:'/api/v1/inventory/transfers',headers:key===null ? {} : {'idempotency-key':key},payload:body});
+  try{
+    expect((await app.inject({method:'GET',url:'/api/v1/inventory/transfers'})).statusCode).toBe(401);expect((await post()).statusCode).toBe(401);signedIn=true;
+    for(const forbidden of ['CASHIER','FINANCE'] as const){role=forbidden;expect((await post()).statusCode).toBe(403);expect((await app.inject({method:'GET',url:'/api/v1/inventory/transfers'})).statusCode).toBe(403);}
+    for(const allowed of ['ADMIN','MANAGER','WAREHOUSE'] as const){role=allowed;expect((await post()).statusCode).toBe(201);}
+    for(const key of [null,' ','x'.repeat(201)])expect((await post(payload,key)).statusCode).toBe(400);
+    expect((await post({...payload,sourceWarehouseId:payload.destinationWarehouseId})).statusCode).toBe(400);expect((await post({...payload,organizationId:registeredUser.id})).statusCode).toBe(400);
+    expect((await app.inject({method:'GET',url:'/api/v1/inventory/transfers?limit=0'})).statusCode).toBe(400);
+    const list=await app.inject({method:'GET',url:'/api/v1/inventory/transfers?limit=20&offset=40'});expect(list.statusCode).toBe(200);expect(service.list).toHaveBeenCalledWith(input.organizationId,{limit:20,offset:40});
+    expect(service.post).toHaveBeenCalledWith(input.organizationId,registeredUser.id,'transfer-key',{...payload,occurredAt:new Date(payload.occurredAt)},expect.any(String));
+    vi.mocked(service.post).mockResolvedValueOnce({ok:true,transfer,replayed:true});expect((await post()).statusCode).toBe(200);
+    vi.mocked(service.post).mockResolvedValueOnce({ok:false,reason:'INSUFFICIENT_STOCK'});expect((await post()).statusCode).toBe(409);
+  }finally{await app.close();}
+  const unavailable=await build();try{expect((await unavailable.inject({method:'GET',url:'/api/v1/inventory/transfers'})).statusCode).toBe(503);expect((await unavailable.inject({method:'POST',url:'/api/v1/inventory/transfers',headers:{'idempotency-key':'key'},payload})).statusCode).toBe(503);}finally{await unavailable.close();}
+},30000);
+
+it('authorizes tenant-scoped physical count posting/listing and validates frozen stock snapshots',async()=>{
+  let signedIn=false;let role:'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'='ADMIN';
+  const auth={...authenticationService,authenticate:async()=>signedIn ? ({ok:true as const,token:'token',user:{...registeredUser,role}}) : ({ok:false as const,reason:'UNAUTHENTICATED' as const})};
+  const payload={warehouseId:registeredUser.id,reason:'Physical count',occurredAt:'2026-10-30T10:00:00.000Z',lines:[{productId:registeredUser.id,expectedQuantity:'1.1250',countedQuantity:'0'}]};
+  const count={...payload,id:registeredUser.id,organizationId:input.organizationId,actorUserId:registeredUser.id,occurredAt:new Date(payload.occurredAt),createdAt:new Date(payload.occurredAt),lines:[{...payload.lines[0]!,id:registeredUser.id,productName:'Shirt',sku:'SH-1',difference:'-1.1250',inventoryTransactionId:registeredUser.id}]};
+  const service:ReturnType<typeof createStockCountService>={list:vi.fn(async(_organizationId,query)=>({counts:[count],total:1,...query})),post:vi.fn(async()=>({ok:true as const,count,replayed:false}))};
+  const build=(counts?:typeof service)=>buildApp(...([successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,...Array(17).fill(undefined),counts] as unknown as Parameters<typeof buildApp>));
+  const app=await build(service);const post=(body:object=payload,key:string|null='count-key')=>app.inject({method:'POST',url:'/api/v1/inventory/counts',headers:key===null ? {} : {'idempotency-key':key},payload:body});
+  try{
+    expect((await app.inject({method:'GET',url:'/api/v1/inventory/counts'})).statusCode).toBe(401);expect((await post()).statusCode).toBe(401);signedIn=true;
+    for(const forbidden of ['CASHIER','FINANCE'] as const){role=forbidden;expect((await post()).statusCode).toBe(403);expect((await app.inject({method:'GET',url:'/api/v1/inventory/counts'})).statusCode).toBe(403);}
+    for(const allowed of ['ADMIN','MANAGER','WAREHOUSE'] as const){role=allowed;expect((await post()).statusCode).toBe(201);}
+    for(const key of [null,' ','x'.repeat(201)])expect((await post(payload,key)).statusCode).toBe(400);
+    expect((await post({...payload,lines:[]})).statusCode).toBe(400);expect((await post({...payload,organizationId:registeredUser.id})).statusCode).toBe(400);expect((await app.inject({method:'GET',url:'/api/v1/inventory/counts?limit=0'})).statusCode).toBe(400);
+    expect((await app.inject({method:'GET',url:'/api/v1/inventory/counts?limit=10&offset=20'})).statusCode).toBe(200);expect(service.list).toHaveBeenCalledWith(input.organizationId,{limit:10,offset:20});
+    expect(service.post).toHaveBeenCalledWith(input.organizationId,registeredUser.id,'count-key',{...payload,occurredAt:new Date(payload.occurredAt)});
+    vi.mocked(service.post).mockResolvedValueOnce({ok:true,count,replayed:true});expect((await post()).statusCode).toBe(200);vi.mocked(service.post).mockResolvedValueOnce({ok:false,reason:'STOCK_CHANGED'});expect((await post()).statusCode).toBe(409);
+  }finally{await app.close();}
+  const absent=await build();try{expect((await absent.inject({method:'GET',url:'/api/v1/inventory/counts'})).statusCode).toBe(503);expect((await absent.inject({method:'POST',url:'/api/v1/inventory/counts',payload})).statusCode).toBe(503);}finally{await absent.close();}
+},30000);
+
+it('authorizes low-stock read models and versioned minimum changes without accepting tenant fields',async()=>{
+  let signedIn=false;let role:'ADMIN'|'MANAGER'|'WAREHOUSE'|'CASHIER'|'FINANCE'='ADMIN';
+  const auth={...authenticationService,authenticate:async()=>signedIn ? ({ok:true as const,token:'token',user:{...registeredUser,role}}) : ({ok:false as const,reason:'UNAUTHENTICATED' as const})};
+  const payload={productId:registeredUser.id,warehouseId:registeredUser.id,minimum:'1.1250',version:0};
+  const service:ReturnType<typeof createStockThresholdService>={list:vi.fn(async(_organizationId,query)=>({thresholds:[],total:0,limit:query.limit,offset:query.offset,asOf:new Date()})),set:vi.fn(async()=>({ok:true as const,threshold:{id:registeredUser.id,minimum:'1.1250',version:1}}))};
+  const build=(thresholds?:typeof service)=>buildApp(...([successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,...Array(18).fill(undefined),thresholds] as unknown as Parameters<typeof buildApp>));
+  const app=await build(service);const get=()=>app.inject({method:'GET',url:'/api/v1/inventory/thresholds'});const put=(body:object=payload)=>app.inject({method:'PUT',url:'/api/v1/inventory/thresholds',payload:body});
+  try{
+    expect((await get()).statusCode).toBe(401);expect((await put()).statusCode).toBe(401);signedIn=true;role='CASHIER';expect((await get()).statusCode).toBe(403);expect((await put()).statusCode).toBe(403);role='FINANCE';expect((await get()).statusCode).toBe(200);expect((await put()).statusCode).toBe(403);
+    for(const allowed of ['ADMIN','MANAGER','WAREHOUSE'] as const){role=allowed;expect((await put()).statusCode).toBe(200);expect((await get()).statusCode).toBe(200);}
+    expect((await put({...payload,organizationId:registeredUser.id})).statusCode).toBe(400);expect((await put({...payload,minimum:'-1'})).statusCode).toBe(400);expect((await app.inject({method:'GET',url:'/api/v1/inventory/thresholds?asOf=invalid'})).statusCode).toBe(400);
+    expect((await app.inject({method:'GET',url:'/api/v1/inventory/thresholds?mode=all&limit=10&offset=20'})).statusCode).toBe(200);expect(service.list).toHaveBeenCalledWith(input.organizationId,{mode:'all',limit:10,offset:20});expect(service.set).toHaveBeenCalledWith(input.organizationId,registeredUser.id,payload);
+    vi.mocked(service.set).mockResolvedValueOnce({ok:false,reason:'VERSION_CONFLICT'});expect((await put()).statusCode).toBe(409);
+  }finally{await app.close();}
+  const absent=await build();try{expect((await absent.inject({method:'GET',url:'/api/v1/inventory/thresholds'})).statusCode).toBe(503);expect((await absent.inject({method:'PUT',url:'/api/v1/inventory/thresholds',payload})).statusCode).toBe(503);}finally{await absent.close();}
+},30000);
+
+it('returns correlated generic failures without database details and preserves malformed-JSON status',async()=>{
+  const auth={...authenticationService,authenticate:async()=>({ok:true as const,token:'token',user:{...registeredUser,role:'ADMIN' as const}})};
+  const app=await buildApp(successIdentity,auth,userDirectoryService,{...categoryService,list:async()=>{throw Error('Private database query and credentials');}},productService,warehouseService,stockService,inventoryMovementService,customerService,salesService);
+  try{const failed=await app.inject({method:'GET',url:'/api/v1/categories'});expect(failed.statusCode).toBe(500);expect(failed.json()).toEqual({error:'INTERNAL_SERVER_ERROR',requestId:expect.any(String)});expect(failed.body).not.toContain('Private');const malformed=await app.inject({method:'POST',url:'/api/v1/auth/login',headers:{'content-type':'application/json'},payload:'{'});expect(malformed.statusCode).toBe(400);expect(malformed.json()).toEqual({error:'INVALID_REQUEST',requestId:expect.any(String)});}finally{await app.close();}
 });

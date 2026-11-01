@@ -1,3 +1,4 @@
+import { createPrismaExpenseRepository } from '../../src/modules/finance/prisma-expense-repository.js';
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -90,20 +91,7 @@ const realSalesService = createSalesService({
   }
 });
 const salesApp = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, realSalesService);
-const realExpenseService = createExpenseService({
-  async findByIdempotencyKey(currentOrganizationId, idempotencyKey) {
-    const expense = await prisma.expense.findUnique({ where: { organizationId_idempotencyKey: { organizationId: currentOrganizationId, idempotencyKey } } });
-    return expense && { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
-  },
-  async post(command) {
-    return prisma.$transaction(async (transaction) => {
-      const expense = await transaction.expense.create({ data: command });
-      await transaction.treasuryTransaction.create({ data: { id: randomUUID(), organizationId: command.organizationId, type: 'EXPENSE_PAYMENT', paymentMethod: command.paymentMethod, amount: command.amount, sourceType: 'Expense', sourceId: expense.id, actorUserId: command.actorUserId, occurredAt: command.occurredAt } });
-      await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'EXPENSE_POSTED', entityType: 'Expense', entityId: expense.id } });
-      return { id: expense.id, organizationId: expense.organizationId, category: expense.category, description: expense.description, paymentMethod: expense.paymentMethod, amount: expense.amount.toFixed(4), occurredAt: expense.occurredAt };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  }
-});
+const realExpenseService = createExpenseService(createPrismaExpenseRepository(prisma));
 const expenseApp = await buildApp(identityService, authenticationService, userDirectoryService, categoryService, productService, warehouseService, stockService, inventoryMovementService, customerService, salesService, undefined, undefined, undefined, undefined, undefined, undefined, realExpenseService);
 
 beforeAll(async () => {

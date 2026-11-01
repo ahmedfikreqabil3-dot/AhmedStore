@@ -32,6 +32,10 @@ export type Product = z.infer<typeof productSchema>;
 export const createProductSchema = productSchema.pick({ name: true, sku: true, barcode: true, categoryId: true, salePrice: true, costPrice: true }).transform((value) => ({ ...value, sku: value.sku.toUpperCase() }));
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
+export const updateProductSchema = productSchema.pick({ name: true, sku: true, barcode: true, categoryId: true, salePrice: true, costPrice: true, version: true })
+  .strict().transform((value) => ({ ...value, sku: value.sku.toUpperCase() }));
+export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+
 export const warehouseSchema = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),

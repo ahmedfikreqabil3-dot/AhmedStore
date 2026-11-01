@@ -7,7 +7,7 @@ export interface PurchaseReturnRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PostedPurchaseReturn | null>;
   findPurchase(id: string, organizationId: string): Promise<ReturnablePurchase | null>;
   returnedQuantity(purchaseLineId: string, organizationId: string): Promise<string>;
-  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreatePurchaseReturnInput; purchase: ReturnablePurchase; calculated: { total: string; lines: Array<{ purchaseLineId: string; productId: string; quantity: string; unitCost: string; total: string }> } }): Promise<{ ok: true; purchaseReturn: PostedPurchaseReturn } | { ok: false; reason: 'INSUFFICIENT_STOCK' | 'RETURN_QUANTITY_EXCEEDED' }>;
+  post(command: { id: string; organizationId: string; actorUserId: string; idempotencyKey: string; input: CreatePurchaseReturnInput; purchase: ReturnablePurchase; calculated: { total: string; lines: Array<{ purchaseLineId: string; productId: string; quantity: string; unitCost: string; total: string }> } }): Promise<{ ok: true; purchaseReturn: PostedPurchaseReturn; replayed?:boolean } | { ok: false; reason: 'INSUFFICIENT_STOCK' | 'RETURN_QUANTITY_EXCEEDED' | 'ACTOR_UNAVAILABLE' }>;
 }
 function units(value: string) { const [whole, fraction = ''] = value.split('.'); return BigInt(whole) * 10_000n + BigInt(fraction.padEnd(4, '0')); }
 function format(value: bigint) { return `${value / 10_000n}.${(value % 10_000n).toString().padStart(4, '0')}`; }
@@ -20,6 +20,6 @@ export function createPurchaseReturnService(repository: PurchaseReturnRepository
     let total = 0n; const lines = input.lines.map((inputLine) => { const line = purchase.lines.find((candidate) => candidate.id === inputLine.purchaseLineId)!; const lineTotal = units(line.total) * units(inputLine.quantity) / units(line.quantity); total += lineTotal; return { purchaseLineId: line.id, productId: line.productId, quantity: inputLine.quantity, unitCost: line.unitCost, total: format(lineTotal) }; });
     if (input.settlements.reduce((sum, settlement) => sum + units(settlement.amount), 0n) !== total) return { ok: false as const, reason: 'SETTLEMENT_TOTAL_MISMATCH' as const };
     const result = await repository.post({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, input, purchase, calculated: { total: format(total), lines } });
-    return result.ok ? { ok: true as const, purchaseReturn: result.purchaseReturn, replayed: false } : result;
+    return result.ok ? { ok: true as const, purchaseReturn: result.purchaseReturn, replayed: result.replayed ?? false } : result;
   } };
 }

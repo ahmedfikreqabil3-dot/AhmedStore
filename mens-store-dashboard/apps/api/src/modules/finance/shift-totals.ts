@@ -29,14 +29,14 @@ export function calculateShiftTotals(entries: TreasuryEntry[]): ShiftTotals {
 }
 
 export interface ShiftTotalsRepository {
-  listEntries(organizationId: string, openedAt: Date, closedAt: Date): Promise<TreasuryEntry[]>;
+  listEntries(organizationId: string, openedAt: Date, closedAt: Date, actorUserId?:string): Promise<TreasuryEntry[]>;
 }
 
 export function createShiftTotalsService(repository: ShiftTotalsRepository) {
   return {
-    async summarize(organizationId: string, openedAt: Date, closedAt: Date) {
+    async summarize(organizationId: string, openedAt: Date, closedAt: Date, actorUserId?:string) {
       if (closedAt <= openedAt) return { ok: false as const, reason: 'INVALID_SHIFT_PERIOD' as const };
-      return { ok: true as const, totals: calculateShiftTotals(await repository.listEntries(organizationId, openedAt, closedAt)) };
+      return { ok: true as const, totals: calculateShiftTotals(await repository.listEntries(organizationId, openedAt, closedAt,actorUserId)) };
     }
   };
 }

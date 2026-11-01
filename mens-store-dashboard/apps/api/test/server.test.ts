@@ -19,4 +19,9 @@ describe('API server', () => {
     expect(app.server.listening).toBe(true);
     await app.close();
   });
+  it('supports an explicitly configured local bind address',async()=>{
+    const previous=process.env.API_HOST;process.env.API_HOST='127.0.0.1';
+    try{const app=await startServer(0,identityService,authenticationService,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService);expect(app.server.listening).toBe(true);await app.close();}
+    finally{if(previous===undefined)delete process.env.API_HOST;else process.env.API_HOST=previous;}
+  });
 });

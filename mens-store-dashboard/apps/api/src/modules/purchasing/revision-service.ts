@@ -14,12 +14,12 @@ export interface PurchaseRevisionRepository {
   findWarehouse(id: string, organizationId: string): Promise<Warehouse | null>;
   findProducts(ids: string[], organizationId: string): Promise<Product[]>;
   findProductsByBarcodes(barcodes: string[], organizationId: string): Promise<Product[]>;
-  revise(command: PurchaseRevisionCommand): Promise<{ ok: true; purchase: PostedPurchase } | { ok: false; reason: 'PURCHASE_NOT_POSTED' | 'PURCHASE_HAS_RETURNS' | 'INSUFFICIENT_STOCK' | 'PAYMENT_TOTAL_MISMATCH' }>;
+  revise(command: PurchaseRevisionCommand): Promise<{ ok: true; purchase: PostedPurchase; replayed?:boolean } | { ok: false; reason: 'PURCHASE_NOT_POSTED' | 'PURCHASE_HAS_RETURNS' | 'INSUFFICIENT_STOCK' | 'PAYMENT_TOTAL_MISMATCH' | 'SUPPLIER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'ACTOR_UNAVAILABLE' }>;
 }
 
 function units(value: string) { const [whole, fraction = ''] = value.split('.'); return BigInt(whole) * 10_000n + BigInt(fraction.padEnd(4, '0')); }
 
-export type RevisePurchaseResult = { ok: true; purchase: PostedPurchase; replayed: boolean } | { ok: false; reason: 'PURCHASE_NOT_POSTED' | 'PURCHASE_HAS_RETURNS' | 'SUPPLIER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'PAYMENT_TOTAL_MISMATCH' | 'INSUFFICIENT_STOCK' };
+export type RevisePurchaseResult = { ok: true; purchase: PostedPurchase; replayed: boolean } | { ok: false; reason: 'PURCHASE_NOT_POSTED' | 'PURCHASE_HAS_RETURNS' | 'SUPPLIER_UNAVAILABLE' | 'WAREHOUSE_UNAVAILABLE' | 'PRODUCT_UNAVAILABLE' | 'ACTOR_UNAVAILABLE' | 'PAYMENT_TOTAL_MISMATCH' | 'INSUFFICIENT_STOCK' };
 
 export function createPurchaseRevisionService(repository: PurchaseRevisionRepository) {
   return { async revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<RevisePurchaseResult> {
@@ -42,6 +42,6 @@ export function createPurchaseRevisionService(repository: PurchaseRevisionReposi
     const calculated = calculatePurchase(lines as ResolvedPurchaseLine[]);
     if (input.payments.reduce((total, payment) => total + units(payment.amount), 0n) !== units(calculated.total)) return { ok: false, reason: 'PAYMENT_TOTAL_MISMATCH' };
     const result = await repository.revise({ id: randomUUID(), organizationId, actorUserId, idempotencyKey, original, input: { ...input, lines: lines as ResolvedPurchaseLine[] }, calculated, products: byId });
-    return result.ok ? { ok: true, purchase: result.purchase, replayed: false } : result;
+    return result.ok ? { ok: true, purchase: result.purchase, replayed: result.replayed ?? false } : result;
   } };
 }
