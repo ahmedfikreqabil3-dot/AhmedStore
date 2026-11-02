@@ -1,3 +1,20 @@
+import {randomUUID} from 'node:crypto';
+import {runtimeConfig} from './operations/config.js';
+import {operations,type OperationsOptions} from './operations/http.js';
+import {branchContext,branchRequestAllowed} from './modules/identity/branch-scope.js';
+import {registerUserAdministration} from './modules/identity/administration-routes.js';
+import type {createUserAdministration} from './modules/identity/administration.js';
+import {registerManagementRoutes} from './modules/catalogue/management-routes.js';
+import type {createManagementService} from './modules/catalogue/management.js';
+import {registerOrderRoutes} from './modules/purchasing/order-routes.js';
+import type {createPurchaseOrderService} from './modules/purchasing/orders.js';
+import { registerDraftRoutes } from './modules/sales/draft-routes.js';
+import type { createSaleDraftService } from './modules/sales/drafts.js';
+import type { SaleDocument } from '@ahmed-store/contracts';
+import { registerTreasuryRoutes } from './modules/finance/treasury-routes.js';
+import type { createTreasuryService } from './modules/finance/treasury-service.js';
+import { registerReportRoutes } from './modules/reporting/report-routes.js';
+import type { createReportsService } from './modules/reporting/reports.js';
 import { createInventoryTransferSchema, inventoryTransferQuerySchema } from '@ahmed-store/contracts';
 import { publicError } from './modules/shared/public-error.js';
 import { customerSchema, partyStatementQuerySchema, type PartyStatement, type PartyStatementQuery } from '@ahmed-store/contracts';
@@ -13,7 +30,7 @@ import { setStockThresholdSchema, stockThresholdQuerySchema } from '@ahmed-store
 import { createStockCountSchema, stockCountQuerySchema } from '@ahmed-store/contracts';
 import { updateCustomerSchema, updateSupplierSchema, type UpdateCustomerInput, type UpdateSupplierInput } from '@ahmed-store/contracts';
 import type { PartyUpdateResult } from './modules/parties/update.js';
-import Fastify from 'fastify';
+import Fastify,{LogController} from 'fastify';
 import swagger from '@fastify/swagger';
 import { createCategorySchema, createCustomerSchema, createExpenseSchema, createInvoiceReturnSchema, createInventoryMovementSchema, createNoInvoiceReturnSchema, createProductSchema, productSchema, updateProductSchema, createPurchaseReturnSchema, createPurchaseSchema, createSaleSchema, createSupplierSchema, createUserSchema, createWarehouseSchema, healthResponseSchema, loginSchema, registerUserSchema, salesExportQuerySchema, salesHistoryQuerySchema, stockQuerySchema, type Category, type CreateCategoryInput, type CreateCustomerInput, type CreateExpenseInput, type CreateInvoiceReturnInput, type CreateInventoryMovementInput, type CreateNoInvoiceReturnInput, type CreateProductInput, type CreatePurchaseInput, type CreateSaleInput, type CreateSupplierInput, type CreateWarehouseInput, type Customer, type InventoryMovement, type PaymentMethod, type Product, type PublicUser, type SalesHistoryQuery, type Supplier, type Warehouse } from '@ahmed-store/contracts';
 import { can } from './modules/identity/authorization.js';
@@ -22,6 +39,7 @@ import type { RegistrationResult } from './modules/identity/service.js';
 import type { AuthenticationService } from './modules/identity/session.js';
 
 export interface IdentityService {
+  administration?:ReturnType<typeof createUserAdministration>;
   register(input: ReturnType<typeof registerUserSchema.parse>): Promise<RegistrationResult>;
   auditUserCreated(actorUserId: string, user: PublicUser): Promise<void>;
 }
@@ -31,6 +49,7 @@ export interface UserDirectoryService {
 }
 
 export interface CategoryService {
+  management?:ReturnType<typeof createManagementService>;
   list(organizationId: string): Promise<Category[]>;
   create(organizationId: string, input: CreateCategoryInput): Promise<{ ok: true; category: Category } | { ok: false; reason: 'CATEGORY_EXISTS' }>;
 }
@@ -76,6 +95,7 @@ export interface SupplierService {
   create(organizationId: string, input: CreateSupplierInput): Promise<{ ok: true; supplier: Supplier }>;
 }
 export interface PurchaseService {
+  orders?: ReturnType<typeof createPurchaseOrderService>;
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
   list?(organizationId: string): Promise<Array<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date }>>;
   find?(organizationId: string, purchaseId: string): Promise<{ id: string; supplierId: string; warehouseId: string; status: 'POSTED' | 'VOIDED'; total: string; occurredAt: Date; lines: Array<{ id: string; lineNumber: number; productId: string; productName: string; sku: string; barcode: string | null; quantity: string; unitCost: string; total: string }> } | null>;
@@ -87,9 +107,10 @@ export interface PurchaseRevisionService {
   revise(organizationId: string, actorUserId: string, purchaseId: string, idempotencyKey: string, input: CreatePurchaseInput): Promise<{ ok: true; purchase: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 export interface SalesExportService { exportCsv(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<string>; exportXlsx?(organizationId: string, actorUserId: string, query: ReturnType<typeof salesExportQuerySchema.parse>): Promise<Buffer>; }
-export interface SalesHistoryService { list(organizationId: string, query: SalesHistoryQuery): Promise<{ sales: Array<{ id: string; customerName: string; warehouseName: string; total: string; status: 'POSTED' | 'VOIDED'; occurredAt: Date }>; total: number; limit: number; offset: number }>; }
+export interface SalesHistoryService { detail?(organizationId:string,saleId:string,ownerUserId?:string):Promise<SaleDocument|null>; list(organizationId: string, query: SalesHistoryQuery): Promise<{ sales: Array<{ id: string; customerName: string; warehouseName: string; total: string; status: 'POSTED' | 'VOIDED'; occurredAt: Date }>; total: number; limit: number; offset: number }>; }
 
 export interface SalesService {
+  drafts?: ReturnType<typeof createSaleDraftService>;
   post(organizationId: string, actorUserId: string, idempotencyKey: string, input: CreateSaleInput): Promise<{ ok: true; sale: { id: string }; replayed: boolean } | { ok: false; reason: string }>;
 }
 
@@ -134,9 +155,9 @@ function readSessionToken(cookie: string | undefined) {
   return cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('session='))?.slice('session='.length);
 }
 
-function sessionCookie(token: string, expired = false) {
+function sessionCookie(token: string, expired = false, secure = false) {
   const age = expired ? 0 : 8 * 60 * 60;
-  return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}`;
+  return `session=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${age}${secure?'; Secure':''}`;
 }
 
 function parseShiftClose(body: unknown) {
@@ -147,11 +168,23 @@ function parseShiftClose(body: unknown) {
   return { countedCash, discrepancyReason: typeof discrepancyReason === 'string' ? discrepancyReason.trim() : null };
 }
 
-export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService, categoryImportService?: CategoryImportService, productImportService?: ProductImportService, supplierImportService?: SupplierImportService, inventoryTransferService?: ReturnType<typeof createInventoryTransferService>, stockCountService?: ReturnType<typeof createStockCountService>, stockThresholdService?: ReturnType<typeof createStockThresholdService>) {
-  const app = Fastify({ logger: false });
+export async function buildApp(identityService: IdentityService, authenticationService: AuthenticationService, userDirectoryService: UserDirectoryService, categoryService: CategoryService, productService: ProductService, warehouseService: WarehouseService, stockService: StockService, inventoryMovementService: InventoryMovementService, customerService: CustomerService, salesService: SalesService, invoiceReturnService?: InvoiceReturnService, noInvoiceReturnService?: NoInvoiceReturnService, noInvoiceApprovalService?: NoInvoiceApprovalService, shiftTotalsService?: ShiftTotalsService, returnRevisionService?: ReturnRevisionService, shiftService?: ShiftService, expenseService?: ExpenseService, supplierService?: SupplierService, purchaseService?: PurchaseService, purchaseReturnService?: PurchaseReturnService, purchaseRevisionService?: PurchaseRevisionService, salesExportService?: SalesExportService, salesHistoryService?: SalesHistoryService, categoryImportService?: CategoryImportService, productImportService?: ProductImportService, supplierImportService?: SupplierImportService, inventoryTransferService?: ReturnType<typeof createInventoryTransferService>, stockCountService?: ReturnType<typeof createStockCountService>, stockThresholdService?: ReturnType<typeof createStockThresholdService>, reportsService?: ReturnType<typeof createReportsService>, treasuryService?: ReturnType<typeof createTreasuryService>, operational?:OperationsOptions) {
+  const config=operational?.config??runtimeConfig();
+  const app=Fastify({logger:config.logLevel==='silent'?false:{level:config.logLevel,redact:['req.headers.authorization','req.headers.cookie','res.headers["set-cookie"]','password','passwordHash','token','DATABASE_URL'],serializers:{req:r=>({method:r.method}),res:r=>({statusCode:r.statusCode}),err:e=>({type:e.name,message:"REQUEST_FAILED",stack:"",code:e.code})}},logController:new LogController({disableRequestLogging:true}),trustProxy:config.trustProxy,requestIdHeader:false,genReqId:()=>randomUUID(),bodyLimit:config.bodyLimit,requestTimeout:30000,connectionTimeout:10000});
+  operations(app,config,operational);
+  app.addHook('onRequest',(_request,_reply,done)=>{branchContext.run({},done);});
+  app.addHook('preHandler',async(request,reply)=>{if(!authenticationService.branchScopeEnabled)return;const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok||auth.user.warehouseIds===undefined)return;const path=request.url.split('?')[0]!;if(!branchRequestAllowed(path,request.method,request.query as Record<string,unknown>,request.body,auth.user.warehouseIds))return reply.code(403).send({error:'BRANCH_FORBIDDEN'});});
+  registerUserAdministration(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:identityService.administration});
   app.setErrorHandler((error,request,reply)=>{const safe=publicError(error,request.id);return reply.code(safe.statusCode).send(safe.body);});
   app.addContentTypeParser('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
   registerCustomerImportRoutes(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:customerService.imports});
+
+  registerManagementRoutes(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:categoryService?.management});
+  registerOrderRoutes(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:purchaseService?.orders});
+  registerDraftRoutes(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:salesService.drafts});
+  registerReportRoutes(app, { authenticate: request => authenticationService.authenticate(readSessionToken(request.headers.cookie)), service: reportsService });
+
+  await app.register(async scope => registerTreasuryRoutes(scope, { authenticate: request => authenticationService.authenticate(readSessionToken(request.headers.cookie)), service: treasuryService }), { prefix: '/api/v1/treasury' });
 
   await app.register(swagger, {
     openapi: {
@@ -218,7 +251,7 @@ export async function buildApp(identityService: IdentityService, authenticationS
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_LOGIN' });
     const result = await authenticationService.login(parsed.data);
     if (!result.ok) return reply.code(401).send({ error: result.reason });
-    return reply.header('set-cookie', sessionCookie(result.token)).send({ user: result.user });
+    return reply.header('set-cookie', sessionCookie(result.token,false,config.production)).send({ user: result.user });
   });
 
   app.get('/api/v1/auth/me', { schema: { summary: 'Get the current user', tags: ['Authentication'] } }, async (request, reply) => {
@@ -229,7 +262,7 @@ export async function buildApp(identityService: IdentityService, authenticationS
 
   app.post('/api/v1/auth/logout', { schema: { summary: 'End the current session', tags: ['Authentication'] } }, async (request, reply) => {
     await authenticationService.logout(readSessionToken(request.headers.cookie));
-    return reply.code(204).header('set-cookie', sessionCookie('', true)).send();
+    return reply.code(204).header('set-cookie', sessionCookie('', true,config.production)).send();
   });
 
   app.get('/api/v1/users', { schema: { summary: 'List organization users', tags: ['Users'] } }, async (request, reply) => {
@@ -334,7 +367,7 @@ export async function buildApp(identityService: IdentityService, authenticationS
   app.get('/api/v1/warehouses', { schema: { summary: 'List organization warehouses', tags: ['Catalogue'] } }, async (request, reply) => {
     const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
-    if (!can(authenticated.user.role, 'inventory:write')) return reply.code(403).send({ error: 'FORBIDDEN' });
+    if (!can(authenticated.user.role, 'inventory:write') && !can(authenticated.user.role, 'reports:read')) return reply.code(403).send({ error: 'FORBIDDEN' });
     return { warehouses: await warehouseService.list(authenticated.user.organizationId) };
   });
 
@@ -597,6 +630,14 @@ export async function buildApp(identityService: IdentityService, authenticationS
     const result = await salesService.post(authenticated.user.organizationId, authenticated.user.id, idempotencyKey, parsed.data);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return reply.code(result.replayed ? 200 : 201).send(result.sale);
+  });
+
+  app.get('/api/v1/sales/:saleId',async(request,reply)=>{
+    const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok)return reply.code(401).send({error:auth.reason});
+    const reports=can(auth.user.role,'reports:read');if(!reports&&!can(auth.user.role,'sales:write'))return reply.code(403).send({error:'FORBIDDEN'});
+    const id=(request.params as {saleId:string}).saleId;if(!productSchema.shape.id.safeParse(id).success)return reply.code(400).send({error:'INVALID_SALE_ID'});
+    if(!salesHistoryService?.detail)return reply.code(503).send({error:'SALES_HISTORY_UNAVAILABLE'});
+    return await salesHistoryService.detail(auth.user.organizationId,id,reports?undefined:auth.user.id)??reply.code(404).send({error:'SALE_NOT_FOUND'});
   });
 
   app.get('/api/v1/sales', { schema: { summary: 'List a bounded, organization-scoped sales history', tags: ['Sales'] } }, async (request, reply) => {

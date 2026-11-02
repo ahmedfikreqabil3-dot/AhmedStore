@@ -21,6 +21,13 @@ const expense=()=>({category:'Delivery',description:'Verified shipping cost',pay
 async function money(type:TreasuryEntry['type'],amount:string,occurredAt:Date,actorUserId=ownerId,org=organizationId,paymentMethod:TreasuryEntry['paymentMethod']='CASH'){await prisma.treasuryTransaction.create({data:{organizationId:org,type,paymentMethod,amount,sourceType:'TestFixture',sourceId:randomUUID(),actorUserId,occurredAt}});}
 const zero={expectedCash:'0.0000',countedCash:'0.0000',cashDifference:'0.0000',discrepancyReason:null};
 
+it('rejects stale cash reconciliation inside the closing transaction',async()=>{
+  const opened=await shifts.open(organizationId,ownerId,openedAt);if(!opened.ok)throw Error(opened.reason);
+  await money('SALE_RECEIPT','1.1234',time('11:00'));
+  await expect(shiftRepository.close(organizationId,opened.shift.id,ownerId,closedAt,zero)).rejects.toMatchObject({reason:'SHIFT_TOTALS_CHANGED'});
+  expect((await prisma.shift.findUniqueOrThrow({where:{id:opened.shift.id}})).status).toBe('OPEN');
+});
+
 it('reads scoped expense history and exact whole-period totals before pagination',async()=>{
   for(const [amount,at,method] of [['12.3456',time('11:00'),'CASH'],['2.0001',time('13:00'),'CARD'],['999',new Date(time('13:00').getTime()+1),'CASH'],['888',new Date(time('11:00').getTime()-1),'CASH']] as const)expect(await expenses.post(organizationId,financeId,randomUUID(),{...expense(),amount,occurredAt:at,paymentMethod:method})).toMatchObject({ok:true});
   const history=createApplicationServices(prisma).expenseService;

@@ -1,3 +1,12 @@
+import {MasterManagement,SettingsWorkspace} from './ManagementWorkspace.js';
+import {PurchaseOrdersWorkspace} from './PurchaseOrdersWorkspace.js';
+import { SaleDraftsWorkspace } from './SaleDraftsWorkspace.js';
+import { UsersWorkspace } from './UsersWorkspace.js';
+import { MasterDataWorkspace } from './MasterDataWorkspace.js';
+import { DashboardWorkspace } from './DashboardWorkspace.js';
+import { SalesWorkspace } from './SalesWorkspace.js';
+import { TreasuryWorkspace } from './TreasuryWorkspace.js';
+import { ReportsWorkspace } from './ReportsWorkspace.js';
 import { InventoryTransfers } from './InventoryTransfers.js';
 import { ExpensesWorkspace } from './ExpensesWorkspace.js';
 import { InventoryMovements } from './InventoryMovements.js';
@@ -7,23 +16,31 @@ import { PartyWorkspace } from './PartyWorkspace.js';
 import { CommandScope } from './pending-command.js';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { PublicUser } from '@ahmed-store/contracts';
-import { LoadedPurchaseEntryEditor, NoInvoiceReturnApproval, NoInvoiceReturnSubmission, PurchaseSelector, SalesHistorySearch, ShiftPanel, ShiftReviewPanel, SupplierImportPanel, downloadSalesHistoryXlsx, loadSalesHistory, supplierImportActions } from './App.js';
+import { LoadedPurchaseEntryEditor, NoInvoiceReturnApproval, NoInvoiceReturnSubmission, PurchaseSelector, ShiftPanel, ShiftReviewPanel, SupplierImportPanel, supplierImportActions } from './App.js';
 import { currentUser, signIn, signOut } from './store-api.js';
 import { CatalogueWorkspace } from './CatalogueWorkspace.js';
 import { LivePOS } from './LivePOS.js';
 import { Icon } from './ui/Icon.js';
 
 const pages = [
+  {id:'settings',description:'بيانات المتجر الأساسية.',label:'الإعدادات العامة',icon:'store',roles:['ADMIN']},
   { id: 'home', description: 'ابدأ مهمة جديدة أو انتقل إلى سجلات متجرك.', label: 'نظرة عامة', icon: 'dashboard', roles: ['ADMIN', 'MANAGER', 'CASHIER', 'WAREHOUSE', 'FINANCE'] },
+  { id: 'reports', description: 'تقارير مؤسستك حسب الفترة والفرع مع تصدير النتائج.', label: 'التقارير', icon: 'sales', roles: ['ADMIN', 'MANAGER', 'FINANCE'] },
   { id: 'pos', description: 'أضف الأصناف وحدّد الفرع والعميل، ثم راجع السداد.', label: 'نقطة البيع', icon: 'pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { id: 'customers', description: 'بيانات العملاء والتواصل وحدود الائتمان.', label: 'العملاء', icon: 'user', roles: ['ADMIN','MANAGER','CASHIER'] },
   { id: 'suppliers', description: 'بيانات الموردين والتواصل.', label: 'الموردون', icon: 'purchase', roles: ['ADMIN','MANAGER','WAREHOUSE'] },
   { id: 'products', description: 'كل تفاصيل منتجاتك وأسعارها وأرصدة فروعك.', label: 'المنتجات', icon: 'box', roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'] },
+  { id: 'drafts', description: 'احفظ عرض سعر أو فاتورة معلقة ثم راجعها قبل اعتماد البيع.', label: 'عروض الأسعار والمعلّقات', icon: 'receipt', roles: ['ADMIN','MANAGER','CASHIER','FINANCE'] },
   { id: 'sales', description: 'راجع الفواتير المسجلة وحدّد الفترة المطلوبة.', label: 'سجل المبيعات', icon: 'sales', roles: ['ADMIN', 'MANAGER', 'FINANCE'] },
+  { id: 'purchase-orders', description:'أوامر توريد واستلام جزئي مؤكد فقط.', label:'أوامر الشراء', icon:'purchase',roles:['ADMIN','MANAGER','WAREHOUSE','FINANCE'] },
   { id: 'purchases', description: 'استلام البضاعة، فواتير الموردين، ومرتجعات التوريد.', label: 'المشتريات', icon: 'purchase', roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'] },
+  { id: 'users', description: 'عرض مستخدمي مؤسستك وإضافة مستخدم بالدور المعتمد.', label: 'المستخدمون', icon: 'user', roles: ['ADMIN'] },
+  { id: 'branches', description: 'عرض الفروع وإضافة فرع جديد لمؤسستك.', label: 'إدارة الفروع', icon: 'inventory', roles: ['ADMIN','MANAGER','WAREHOUSE'] },
+  { id: 'categories', description: 'عرض فئات المنتجات وإضافة فئة جديدة.', label: 'الفئات', icon: 'box', roles: ['ADMIN','MANAGER','WAREHOUSE'] },
   { id: 'stock-operations', description: 'الجرد الفعلي، الأرصدة الافتتاحية والتسويات والتحويل بين الفروع.', label: 'حركات المخزون', icon: 'inventory', roles: ['ADMIN','MANAGER','WAREHOUSE'] },
   { id: 'inventory', description: 'أرصدة الأصناف حسب الفرع والتاريخ.', label: 'المخزون والفروع', icon: 'inventory', roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'] },
   { id: 'finance', description: 'تابع ورديتك وراجع حركة النقد والسداد.', label: 'المالية والورديات', icon: 'wallet', roles: ['ADMIN', 'FINANCE', 'CASHIER'] },
+  { id: 'treasury', description: 'الخزائن والتحويلات وتحصيل العملاء وسداد الموردين.', label: 'الخزائن والتسويات', icon: 'wallet', roles: ['ADMIN','FINANCE'] },
   { id: 'expenses', description: 'تسجيل المصروفات ومراجعة حركة الدفع وسجل الفترة.', label: 'المصروفات', icon: 'wallet', roles: ['ADMIN','FINANCE'] },
   { id: 'returns', description: 'طلبات الاسترداد والموافقات المالية في مكان واحد.', label: 'المرتجعات والموافقات', icon: 'receipt', roles: ['ADMIN', 'MANAGER', 'FINANCE'] }
 ] as const;
@@ -64,22 +81,30 @@ export function StoreApp() {
   }
   if (loading) return <div className="design-preview loading-screen" dir="rtl" role="status">جارٍ التحقق من جلستك…</div>;
   if (!user) return <div className="design-preview live-app" dir="rtl" lang="ar">{error ? <main className="loading-screen"><p role="alert">{error}</p><button className="button primary" onClick={() => setRestore((value) => value + 1)}>إعادة التحقق من الجلسة</button></main> : <StoreLogin onSuccess={setUser}/>}</div>;
-  const available = pages.filter((page) => (page.roles as readonly string[]).includes(user.role));
-  const page = available.find((item) => item.id === hash) ?? available[0];
+  const scoped=user.warehouseIds!==undefined;const available = pages.filter((page) => (page.roles as readonly string[]).includes(user.role)&&(!scoped||!['finance','shifts','users','settings','branches','categories','customers','suppliers','products'].includes(page.id)));
+  const page = available.find((item) => item.id === hash) ?? available.find(item => item.id === 'home')!;
   const seller = ['ADMIN', 'MANAGER', 'CASHIER'].includes(user.role);
   const approver = ['ADMIN', 'FINANCE'].includes(user.role);
   return <CommandScope.Provider value={`${user.organizationId}.${user.id}`}><div className="design-preview live-app" dir="rtl" lang="ar"><a className="skip-link" href="#workspace" onClick={(event) => { event.preventDefault(); document.getElementById('workspace')!.focus(); }}>انتقل لمساحة العمل</a><aside className="sidebar"><a href="#home" className="brand"><span className="brand-mark"><Icon name="store" size={25}/></span><span><strong>أحمد ستور</strong><small>كل تفاصيل شغلك، أقرب.</small></span></a><div className="store-switch"><span className="store-avatar">أ</span><div><strong>مساحة مؤسستك</strong><small>{roleNames[user.role]}</small></div></div><p className="nav-label">مساحة العمل</p><nav aria-label="التنقل الرئيسي">{available.map((item) => <a key={item.id} href={`#${item.id}`} className={`nav-item ${page.id === item.id ? 'is-active' : ''}`} aria-current={page.id === item.id ? 'page' : undefined}><Icon name={item.icon}/><span>{item.label}</span></a>)}</nav><div className="sidebar-bottom"><div className="sidebar-foot"><span>أحمد ستور</span><span>نظام إدارة المتجر</span></div></div></aside><div className="workspace-shell"><header className="topbar"><div className="breadcrumb"><span>مساحة العمل</span><Icon name="chevron" size={13}/><strong>{page.label}</strong></div><div className="topbar-tools"><span className="profile-avatar">{user.name.slice(0, 1)}</span><span className="profile-label"><strong>{user.name}</strong><small>{roleNames[user.role]}</small></span><button className="button secondary compact" disabled={loggingOut} onClick={() => void logout()}>{loggingOut ? 'جارٍ الخروج…' : 'تسجيل الخروج'}</button></div></header><main id="workspace" tabIndex={-1} className="main-workspace"><div className="page-heading"><div><div className="heading-kicker">أحمد ستور / إدارة يومك ببساطة</div><h1>{page.label}</h1><p className="live-page-description">{page.description}</p></div></div>{error && <p role="alert" className="error-banner">{error}</p>}
-    {page.id === 'home' && <><section className="surface welcome-panel"><h2>مرحبًا، {user.name}</h2><p>اختار المهمة اللي محتاج تبدأ بيها. البيانات والعمليات متصلة بمؤسستك.</p></section><div className="home-shortcuts">{available.filter((item) => item.id !== 'home').map((item) => <a className="surface home-shortcut" key={item.id} href={`#${item.id}`}><span className="section-icon"><Icon name={item.icon}/></span><strong>{item.label}</strong><Icon name="arrow" size={17}/></a>)}</div></>}
+    {page.id === 'home' && <><section className="surface welcome-panel"><h2>مرحبًا، {user.name}</h2><p>اختار المهمة اللي محتاج تبدأ بيها. البيانات والعمليات متصلة بمؤسستك.</p></section>{!scoped&&['ADMIN','MANAGER','FINANCE'].includes(user.role)&&<DashboardWorkspace/>}<div className="home-shortcuts">{available.filter((item) => item.id !== 'home').map((item) => <a className="surface home-shortcut" key={item.id} href={`#${item.id}`}><span className="section-icon"><Icon name={item.icon}/></span><strong>{item.label}</strong><Icon name="arrow" size={17}/></a>)}</div></>}
     {seller && <div hidden={page.id !== 'pos'}><LivePOS key={user.id} userId={user.id} organizationId={user.organizationId}/></div>}
     <div className="operational-content">
+      {page.id === 'settings'&&<SettingsWorkspace/>}
+      {page.id === 'users' && <UsersWorkspace/>}
+      {page.id === 'branches' && <MasterDataWorkspace key="warehouses" kind="warehouses"/>}
+      {page.id === 'categories' && <MasterDataWorkspace key="categories" kind="categories"/>}
       {page.id === 'customers' && <PartyWorkspace kind="customers" canEdit={user.role!=='CASHIER'}/>}
       {page.id === 'suppliers' && <PartyWorkspace kind="suppliers"/>}
-      {page.id === 'products' && <CatalogueWorkspace view="products"/>}
-      {page.id === 'sales' && <SalesHistorySearch loadSales={loadSalesHistory} exportSales={downloadSalesHistoryXlsx}/>}
+      {page.id === 'products' && <><CatalogueWorkspace view="products"/><details className="surface"><summary>إدارة وأرشفة المنتجات</summary><MasterManagement kind="products"/></details></>}
+      {page.id === 'drafts' && <SaleDraftsWorkspace canEdit={user.role!=='FINANCE'}/>}
+      {page.id === 'sales' && <SalesWorkspace canReturn={user.role!=='FINANCE'}/>}
+      {page.id === 'purchase-orders' && <PurchaseOrdersWorkspace canEdit={user.role!=='FINANCE'}/>}
       {page.id === 'purchases' && <div className="operations-page"><LoadedPurchaseEntryEditor/><PurchaseSelector/><details className="surface"><summary>استيراد الموردين من Excel</summary><SupplierImportPanel actions={supplierImportActions}/></details></div>}
       {page.id === 'stock-operations' && <div className="operations-page"><StockCounts/><InventoryMovements/><InventoryTransfers/></div>}
       {page.id === 'inventory' && <div className="operations-page"><StockThresholds canEdit={['ADMIN','MANAGER','WAREHOUSE'].includes(user.role)}/><CatalogueWorkspace view="inventory"/></div>}
       {page.id === 'finance' && <div className="operations-page"><ShiftPanel/>{approver && <ShiftReviewPanel/>}</div>}
+      {page.id === 'reports' && <ReportsWorkspace branchScoped={scoped}/>}
+      {page.id === 'treasury' && <TreasuryWorkspace/>}
       {page.id === 'expenses' && <ExpensesWorkspace/>}
       {page.id === 'returns' && <div className="operations-page">{['ADMIN', 'MANAGER'].includes(user.role) && <NoInvoiceReturnSubmission/>}{approver && <NoInvoiceReturnApproval/>}</div>}
     </div><footer className="workspace-footer"><span>أحمد ستور · إدارة متجرك ببساطة</span><a href="/design-preview.html#pos" target="_blank" rel="noreferrer">معاينة التصميم</a></footer></main></div></div></CommandScope.Provider>;

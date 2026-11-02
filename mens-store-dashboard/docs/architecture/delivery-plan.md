@@ -1,51 +1,59 @@
 # Controlled delivery plan
 
-## Reconciled status — 2026-10-30
+## Owner-approved core status — 2026-11-02
 
-This revision supersedes broad completion claims based only on the visible
-screens. The target is the first production release covering the legacy
-functional baseline, unless the owner explicitly defers a named capability.
+**Current stage:** Phase 6 implementation delivered; hosted operational acceptance
+is pending. Phases 3, 4 and 5 are **100% of owner-approved core scope**. The full
+regression now passes 335 API, 355 web/design and 35 contracts tests (725 total),
+plus the legacy business script. Seven fresh migration tests and eight restricted
+role/backup tests also pass. No full-source 100% coverage claim is made.
 
-**Current stage:** Phase 4, incomplete. Phase 4A completed design implementation
-for the nine existing live screens; it did not complete the frontend scope.
-Phase 3 still has open backend work. The API coverage gate has been restored
-(253 tests in 51 files, all configured metrics 100%).
-Party editing, safe retry controls, atomic stock transfers/counts, movement
-controls and configurable low-stock alerts are operational. Customer credit
-ledger postings, positive-limit enforcement and customer/supplier statements are
-also implemented. All posting adapters and the remaining application composition
-are covered source; `main.ts` now only bootstraps the application.
-The latest completed web/contract gates passed 255 and 28 tests respectively at
-100% in all four metrics. Expense entry, recovery, history and review are operational.
+The owner accepted Phase 5 and authorized applying the opening-balance migration
+after backup verification. Migration `20261102005000_customer_opening_balances`
+is applied to demo; 31 migration checksums match. Backup/restore verified 41 tables
+and schema; business fingerprints and financial balances were preserved. Runtime
+least-privilege hardening separately preserved all 41 table fingerprints. Demo
+API/web remained running. Real legacy cutover is manual using the new CLI when
+the source data is ready. See [migration runbook](../operations/phase-5-migration.md).
 
-**Estimated scope progress: approximately 56%.** This is a planning estimate,
-not test coverage or a measure of elapsed effort. Phase weights total 100;
-packages within each phase have equal weight. A package scores 1 for evidenced
-implementation, 0.5 for partial/incompletely verified delivery, and 0 for
-absent/unverified delivery. Formal acceptance still requires every exit gate.
+Production build/deployment/HTTPS templates, environment checks, health/readiness,
+structured logs, protected metrics, monitoring hooks, encrypted backup/restore,
+security controls and baseline tests are implemented. Local HTTPS desktop/mobile
+checks and 100 concurrent authenticated reads passed the 1000ms baseline with
+p95 646ms and no failures. Docker/container execution, public host activation,
+external alerts and the historical sustained 500ms target are not certified.
+These remain release gates, not newly deferred features. See
+[production handoff](../operations/production-readiness.md) and
+[verification](../operations/phase-6-verification.json).
 
-| Phase | Release weight | Estimated scope delivered | Acceptance state |
+**Broader release acceptance: 96.25%.** All requested implementation artifacts are
+delivered; this percentage preserves the original Phase 6 operational gates.
+Previously postponed features and hardware checks remain in
+[post-launch deferrals](post-launch-deferrals.md).
+
+| Phase | Core release weight | Accepted | Acceptance state |
 | --- | ---: | ---: | --- |
-| 0 — Architecture baseline | 5 | 100% | Historical baseline complete; scope reconciled here. |
-| 1 — Engineering foundation | 10 | 100% | Local engineering baseline complete. |
-| 2 — Identity/tenancy baseline | 10 | 100% | Exposed identity baseline complete; later scope controls remain release gates. |
-| 3 — Full transactional backend | 25 | 65.625% | In progress; lifecycle, independent settlements, treasury/documents/reports and accounting controls. |
-| 4 — Complete frontend workflows | 30 | 50% | In progress; complete operational bindings and browser acceptance remain. |
-| 5 — Migration/cutover | 10 | 0% | Not started/accepted. |
-| 6 — Production readiness | 10 | 0% | Not deployed/accepted. |
-| 7 — Post-launch growth | Excluded | Not scored | Metric-led work after release. |
+| 0 — Architecture | 5 | 100% | Baseline complete. |
+| 1 — Engineering | 10 | 100% | Baseline complete. |
+| 2 — Identity/tenancy | 10 | 100% | Core complete. |
+| 3 — Transactional backend | 25 | 100% | Core owner accepted. |
+| 4 — UI/workflows | 30 | 100% | Core owner accepted. |
+| 5 — Migration/trial cutover | 10 | 100% | Owner accepted; real legacy cutover manual. |
+| 6 — Production readiness | 10 | 62.5% | Implementation delivered; hosted operational gates pending. |
+| 7 — Post-launch growth | Excluded | Not scored | Existing deferral register unchanged. |
 
-Calculation: 5 + 10 + 10 + (25 × 10.5/16) + (30 × 12/24) = 56.40625 points
-out of 100, reported as approximately 56%. The precision of the calculation
-does not imply precision of the underlying planning estimates.
+Calculation: 5 + 10 + 10 + 25 + 30 + 10 + 6.25 = 96.25.
+Package evidence is recorded in [delivery-progress.json](delivery-progress.json).
 
-Package-level evidence and gaps are recorded in
-[delivery-progress.json](delivery-progress.json). The current audit, complete
-screen inventory and ordered next steps are in
-[delivery audit](delivery-audit-2026-10-29.md). These are the source of truth
-for future progress updates; changing scope/weights must be disclosed.
+## Core acceptance decision
 
-## Global quality policy
+The owner's 2026-11-02 decision supersedes the historical all-scope exit gates for
+Phases 3/4. Their core acceptance uses the full passing regression, critical
+financial/role/branch checks and explicit owner sign-off. Remaining coverage
+expansion and physical printer checks are post-launch items. Financial integrity
+and production security/readiness gates are not waived.
+
+## Historical full-scope quality target (post-launch expansion)
 
 Every implementation phase defines its source-coverage scope before code is
 added. New or modified application code must reach 100% line, function,
@@ -120,25 +128,21 @@ and tenant isolation server-side; all Phase 2 code has 100% coverage.
 
 ## Phase 3 — Transactional commerce backend
 
-**Status:** In progress, 10.5/16 planning points (65.625%). Catalogue/import,
+**Status:** In progress, 12.5/16 planning points (87.5%). Catalogue/import,
 warehouse stock reads/movements, sales, purchasing with immutable revision and
 purchase returns, sales-return posting/approval, expense/treasury posting and
 shift operations exist. Purchasing is implemented; the previous statement that
 it was entirely open was stale.
 
-Open scope includes product archival/lifecycle, complete party lifecycles and
-ledgers/settlements, reporting read models, quotations/held
-documents, purchase orders, and multi-treasury administration. See B01–B16.
+Open scope includes remaining product/party lifecycle controls, quotations/held
+documents, purchase orders and advanced treasury administration. Reporting and
+independent settlements now have implemented core slices. See B01–B16.
 
-**Current gate:** 253 API tests in 51 files pass against the isolated test
-database, with 100% statements, branches, functions and lines. New product
-maintenance tests cover role/tenant scope, version races, duplicate identifiers,
-archive-category rejection, atomic audit rollback and unchanged stock/historical
-sale snapshots. This closes the coverage regression found in the audit; it does
-not complete remaining B02 lifecycle or B16 retry/contract scope. Covered
-repositories now include every financial posting adapter and application
-composition; excluded `main.ts` only bootstraps. Frontend: 255 tests in
-18 files, contracts: 28 tests in 13 files, all configured metrics 100%.
+**Current gate:** 314 API tests in 62 files and 34 contract tests in 18 files
+pass with all four configured coverage metrics at 100%. API/web TypeScript and
+the production web build pass. The full web gate passed 342 tests in 31 files with all four metrics at 100%. Native Edge verified invoice details,
+linked return/revision, A4 invoices and 80mm receipts at desktop/tablet/mobile.
+These gates do not declare all remaining packages complete.
 
 **Deliverables:** all B01–B16 packages in the progress ledger, including the
 legacy document/settlement flows. Schema names/enum values alone do not count
@@ -156,10 +160,10 @@ transactionally enforced and fully covered.
 
 ## Phase 4 — React operations frontend
 
-**Status:** In progress, 12/24 planning points (50%). The nine existing live
+**Status:** In progress, 18.5/24 planning points (89.583%). The live operational
 screens have a consistent RTL design. Login/session/navigation, POS, inventory
 reading, purchase forms, no-invoice returns and shifts have working UI slices.
-Product maintenance and sales detail/return workflows remain partial. There is
+Core sales detail/return/revision and sales printing workflows are implemented. Product lifecycle and other uncompleted packages remain open. There is
 no basis for calling the complete Phase 4 scope finished.
 
 **Deliverables:** all F01–F24 packages in the progress ledger. This includes
@@ -248,36 +252,38 @@ No prototype data may be counted as a live feature.
 
 ## Phase 5 — Repeatable data migration
 
-**Status:** 0%; M01–M03 not accepted. Ordinary Excel master-data imports and
-Prisma schema migrations do not count as legacy business-data migration.
+**Status:** 100% owner-approved core scope. Templates, validated idempotent CLI,
+exact reconciliation, dry-run/rollback/reapply and isolated restore are verified.
+The approved opening-balance migration is applied to demo after verified backup.
+Real legacy export/mapping and cutover are manual when the owner is ready.
+See [migration evidence](../operations/phase-5-trial-verification.json) and
+[current activation evidence](../operations/phase-6-verification.json).
 
-**Deliverables:** legacy export, import command, dry-run mode, reconciliation
-report, backup, rollback procedure, and cutover runbook.
+## Phase 6 — Production readiness and deployment acceptance
 
-**Dependencies:** Phase 3 data model and Phase 4 parity for the migrated flows.
+**Status:** implementation delivered; 62.5% of broader release acceptance.
+P01/P02/P04 each retain half credit until hosted gates have evidence; P03's
+automated encrypted backup/restore drill is verified. No public deployment or
+signed go-live is claimed.
 
-**Tests:** fixture imports, invalid-data rejection, idempotent rerun, rollback,
-and reconciliation of stock, sales, customer balances, and treasury balances.
+**Delivered:** production API/web/container templates, separate owner/runtime
+secrets, strict environment checks, HTTPS/reverse proxy, CI verification pipeline,
+health/readiness, JSON logs, protected Prometheus metrics/rules, backup schedule,
+encrypted online backups, verified fresh restores, headers/origin/rate hardening,
+restricted-role trade/RBAC tests and local HTTPS capacity baseline.
 
-**Exit criteria:** migration is repeatable/reversible and approved totals match
-the legacy baseline before any cutover.
+**Verified:** 41-table final backup/restore, 725 regression tests, 7 migration
+and 8 production-critical tests; baseline 100 concurrent reads, p95 646ms, zero
+failures. Dependency audit: no high/critical, 11 moderate and 1 low remain.
 
-## Phase 6 — Production deployment
+**Remaining operational gates:** execute Docker images/CI on a capable host;
+real domain/public HTTPS, secrets and external alert delivery; residual advisory
+review; sustained representative workloads against the original p95 <500ms
+and 99.9% uptime monitoring goals. Real legacy cutover remains owner-operated.
+Existing advanced/hardware deferrals are unchanged.
 
-**Status:** 0%; P01–P04 not accepted. Running localhost and having compose/build
-configuration do not establish a deployed, backed-up and monitored production.
-
-**Deliverables:** staging/production environments, container images, managed
-PostgreSQL, secrets management, HTTPS, CI/CD, backups, monitoring, alerts, and
-operational runbooks.
-
-**Dependencies:** Phase 5 accepted.
-
-**Tests:** restore drill, security scan, deployment smoke test, load test with
-100 active users, and p95 normal-operation latency under 500 ms.
-
-**Exit criteria:** 99.9% availability monitoring is configured, backup restore
-is proven, and production readiness is approved.
+See [production runbook](../operations/production-readiness.md) for activation,
+backup, restore, rollback and exact limits of this local verification.
 
 ## Phase 7 — Growth and operations
 

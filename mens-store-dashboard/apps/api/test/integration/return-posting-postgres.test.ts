@@ -18,7 +18,7 @@ let organizations:string[]=[];let organizationId:string,otherId:string,actorId:s
 const day=(date:string)=>new Date(`2026-10-${date}T12:00:00.000Z`);
 beforeAll(async()=>{for(const name of ['Return posting tests','Other return posting tests'])organizations.push((await prisma.organization.create({data:{name:`${name} ${randomUUID()}`}})).id);[organizationId,otherId]=organizations;});
 beforeEach(async()=>{actorId=(await prisma.user.create({data:{organizationId,name:'Manager',email:`${randomUUID()}@example.test`,passwordHash:'unused',role:'ADMIN'}})).id;financeId=(await prisma.user.create({data:{organizationId,name:'Finance',email:`${randomUUID()}@example.test`,passwordHash:'unused',role:'FINANCE'}})).id;customerId=(await prisma.customer.create({data:{organizationId,name:'Return customer',creditLimit:'1000'}})).id;warehouseId=(await prisma.warehouse.create({data:{organizationId,name:'Return warehouse'}})).id;productId=(await prisma.product.create({data:{organizationId,name:'Return shirt',sku:randomUUID(),salePrice:'20',costPrice:'10'}})).id;});
-afterEach(async()=>{const where={organizationId:{in:organizations}};await prisma.customerLedgerEntry.deleteMany({where});await prisma.auditEvent.deleteMany({where});await prisma.inventoryTransaction.deleteMany({where});await prisma.treasuryTransaction.deleteMany({where});await prisma.returnPayment.deleteMany({where:{salesReturn:where}});await prisma.returnLine.deleteMany({where:{salesReturn:where}});await prisma.salesReturn.deleteMany({where:{...where,replacesReturnId:{not:null}}});await prisma.salesReturn.deleteMany({where});await prisma.salePayment.deleteMany({where:{sale:where}});await prisma.saleLine.deleteMany({where:{sale:where}});await prisma.sale.deleteMany({where});await prisma.product.deleteMany({where});await prisma.customer.deleteMany({where});await prisma.warehouse.deleteMany({where});await prisma.user.deleteMany({where});});
+afterEach(async()=>{const where={organizationId:{in:organizations}};await prisma.customerLedgerEntry.deleteMany({where});await prisma.auditEvent.deleteMany({where});await prisma.inventoryTransaction.deleteMany({where});await prisma.treasuryTransaction.deleteMany({where});await prisma.returnPayment.deleteMany({where:{salesReturn:where}});await prisma.returnLine.deleteMany({where:{salesReturn:where}});await prisma.salesReturn.deleteMany({where:{...where,replacesReturnId:{not:null}}});await prisma.salesReturn.deleteMany({where});await prisma.salePayment.deleteMany({where:{sale:where}});await prisma.saleLine.deleteMany({where:{sale:where}});await prisma.sale.deleteMany({where});await prisma.product.deleteMany({where});await prisma.customer.deleteMany({where});await prisma.warehouse.deleteMany({where});await prisma.shift.deleteMany({where});await prisma.user.deleteMany({where});});
 afterAll(async()=>{await prisma.organization.deleteMany({where:{id:{in:organizations}}});await prisma.$disconnect();});
 async function stock(quantity:string,date='01'){await prisma.inventoryTransaction.create({data:{organizationId,warehouseId,productId,type:'ADJUSTMENT',quantity,referenceType:'Fixture',referenceId:randomUUID(),occurredAt:day(date)}});}
 async function sale(){await stock('10');const result=await saleService.post(organizationId,actorId,randomUUID(),{customerId,warehouseId,occurredAt:day('05'),lines:[{productId,quantity:'4',unitPrice:'10',discount:'0'}],payments:[{method:'CASH',amount:'20'},{method:'CREDIT',amount:'20'}]});if(!result.ok)throw Error(result.reason);return prisma.sale.findUniqueOrThrow({where:{id:result.sale.id},include:{lines:true}});}
@@ -26,6 +26,23 @@ const returned=(original:Awaited<ReturnType<typeof sale>>,quantity='2'):CreateIn
 const request=():CreateNoInvoiceReturnInput=>({customerId,warehouseId,lines:[{productId,quantity:'0.25',unitPrice:'19.95'}],payments:[{method:'CASH',amount:'2'},{method:'CREDIT',amount:'2.9875'}],reason:'No invoice request',itemCondition:'Unworn',occurredAt:day('20')});
 async function pending(input=request(),key=randomUUID()){const result=await requestService.submit(organizationId,actorId,key,input);if(!result.ok)throw Error(result.reason);return result.salesReturn;}
 async function originalReturn(original:Awaited<ReturnType<typeof sale>>){const result=await service.post(organizationId,actorId,randomUUID(),{...returned(original),lines:[{saleLineId:original.lines[0]!.id,quantity:'0.5'},{saleLineId:original.lines[0]!.id,quantity:'1.5'}]});if(!result.ok)throw Error(result.reason);return result.salesReturn;}
+
+it('blocks invoice returns, revisions and no-invoice requests within the submitting owner closed shift',async()=>{
+  const original=await sale(),posted=await originalReturn(original);
+  await prisma.shift.create({data:{organizationId,userId:actorId,status:'REVIEWED',openedAt:day('09'),closedAt:day('21'),closedByUserId:actorId,expectedCash:'-10',countedCash:'0',cashDifference:'10',discrepancyReason:'Fixture'}});
+  await expect(service.post(organizationId,actorId,randomUUID(),returned(original))).rejects.toMatchObject({reason:'CLOSED_SHIFT'});
+  await expect(revisionService.revise(organizationId,actorId,posted.id,randomUUID(),returned(original))).rejects.toMatchObject({reason:'CLOSED_SHIFT'});
+  await expect(requestService.submit(organizationId,actorId,randomUUID(),request())).rejects.toMatchObject({reason:'CLOSED_SHIFT'});
+  expect(await prisma.salesReturn.count({where:{organizationId}})).toBe(1);
+});
+
+it('blocks approval backdating into the approving owner closed shift without changing pending status',async()=>{
+  const row=await pending();
+  await prisma.shift.create({data:{organizationId,userId:financeId,status:'CLOSED',openedAt:day('19'),closedAt:day('21'),closedByUserId:financeId,expectedCash:'0',countedCash:'0',cashDifference:'0'}});
+  await expect(approvalService.approve(organizationId,financeId,row.id)).rejects.toMatchObject({reason:'CLOSED_SHIFT'});
+  expect((await prisma.salesReturn.findUniqueOrThrow({where:{id:row.id}})).status).toBe('PENDING_APPROVAL');
+  expect(await prisma.treasuryTransaction.count({where:{organizationId}})).toBe(0);
+});
 
 it('keeps original, reversal and replacement customer credit entries without duplicating replays',async()=>{
   const original=await sale();

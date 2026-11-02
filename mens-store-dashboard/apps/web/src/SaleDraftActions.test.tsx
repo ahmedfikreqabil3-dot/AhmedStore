@@ -1,0 +1,17 @@
+import '@testing-library/jest-dom/vitest';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {SaleDraftActions} from './SaleDraftActions.js';
+import {draftFixture as draft} from './sale-draft.fixture.js';
+import {ApiError,readJson} from './store-api.js';
+import {CommandScope} from './pending-command.js';
+vi.mock('./store-api.js',async original=>({...await original<typeof import('./store-api.js')>(),readJson:vi.fn()}));
+const complete=vi.fn(),mount=()=>render(<CommandScope.Provider value="draft-action-test"><SaleDraftActions draft={draft} complete={complete}/></CommandScope.Provider>),click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
+beforeEach(()=>{sessionStorage.clear();vi.clearAllMocks();vi.mocked(readJson).mockResolvedValue({...draft,status:'CONVERTED',saleId:draft.id});});afterEach(()=>{cleanup();vi.restoreAllMocks();});
+it('validates exact split payments, reviews them and converts once',async()=>{
+  let resolve!:(value:unknown)=>void;vi.mocked(readJson).mockImplementationOnce(()=>new Promise(yes=>{resolve=yes;}));mount();for(const value of ['bad','0','19','']){fireEvent.change(screen.getByLabelText('سداد CASH'),{target:{value}});click('مراجعة تحويل المسودة لبيع');expect(screen.getByRole('alert')).toHaveTextContent('مجموع السداد');}
+  fireEvent.change(screen.getByLabelText('سداد CASH'),{target:{value:'5'}});fireEvent.change(screen.getByLabelText('سداد CARD'),{target:{value:'15'}});click('مراجعة تحويل المسودة لبيع');click('رجوع للسداد');click('مراجعة تحويل المسودة لبيع');const button=screen.getByRole('button',{name:'تأكيد العملية'});act(()=>{button.click();button.click();});expect(readJson).toHaveBeenCalledTimes(1);await act(async()=>resolve({...draft,status:'CONVERTED',saleId:draft.id}));expect(complete).toHaveBeenCalledTimes(1);expect(JSON.parse(vi.mocked(readJson).mock.calls[0]![1]!.body as string)).toEqual({version:1,payments:[{method:'CASH',amount:'5'},{method:'CARD',amount:'15'}]});
+});
+it('confirms cancellation independently of payment values',async()=>{mount();click('إلغاء المسودة');expect(screen.getByText('تأكيد إلغاء المسودة بدون حركات مالية')).toBeVisible();click('تأكيد العملية');await waitFor(()=>expect(complete).toHaveBeenCalled());expect(readJson).toHaveBeenCalledWith(`/sale-drafts/${draft.id}/cancel`,expect.objectContaining({body:'{"version":1}'}));});
+it('keeps the exact conversion through an uncertain response and refresh',async()=>{vi.mocked(readJson).mockRejectedValueOnce(Error('offline'));mount();click('مراجعة تحويل المسودة لبيع');click('تأكيد العملية');await screen.findByText('تعذر تأكيد النتيجة. أعد نفس الطلب المحفوظ.');const first=vi.mocked(readJson).mock.calls[0];cleanup();mount();click('إعادة نفس الطلب المحفوظ');await waitFor(()=>expect(complete).toHaveBeenCalled());expect(vi.mocked(readJson).mock.calls[1]).toEqual(first);});
+it('reports definitive rejection and blocks corrupt recovery',async()=>{vi.mocked(readJson).mockRejectedValueOnce(new ApiError(409));mount();click('مراجعة تحويل المسودة لبيع');click('تأكيد العملية');await screen.findByText('رفض التسجيل. حدّث المسودة وراجع الرصيد والسداد والوردية.');cleanup();sessionStorage.setItem('ahmed-store.pending.draft-action-test.draft-action.'+draft.id,'broken');mount();await screen.findByText(/تعذر قراءة الطلب المحفوظ/);expect(screen.getByRole('button',{name:'إلغاء المسودة'})).toBeDisabled();});

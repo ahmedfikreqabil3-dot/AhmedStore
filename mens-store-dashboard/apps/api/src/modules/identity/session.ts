@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { LoginInput, PublicUser } from '@ahmed-store/contracts';
+import {publicUserSchema,type LoginInput,type PublicUser} from '@ahmed-store/contracts';
 import { verifyPassword } from './password.js';
 import type { StoredUser } from './service.js';
 
@@ -26,6 +26,7 @@ export type SessionResult =
   | { ok: false; reason: 'INVALID_CREDENTIALS' | 'UNAUTHENTICATED' };
 
 export interface AuthenticationService {
+  branchScopeEnabled?:boolean;
   login(input: LoginInput): Promise<SessionResult>;
   authenticate(token: string | undefined): Promise<SessionResult>;
   logout(token: string | undefined): Promise<void>;
@@ -36,7 +37,7 @@ export function hashSessionToken(token: string) {
 }
 
 function toPublicUser({ passwordHash: _passwordHash, active: _active, ...user }: StoredUser): PublicUser {
-  return user;
+  return publicUserSchema.parse(user);
 }
 
 export function createSessionService(repository: SessionRepository, now = () => new Date()): AuthenticationService {

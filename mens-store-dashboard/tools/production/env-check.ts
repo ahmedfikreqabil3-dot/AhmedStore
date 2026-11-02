@@ -1,0 +1,1 @@
+import {loadRuntime} from '../../apps/api/src/operations/config.js';const config=loadRuntime();console.log(JSON.stringify({valid:true,production:config.production,port:config.port,https:config.production,explicitTrustedProxies:config.trustProxy!==false}));

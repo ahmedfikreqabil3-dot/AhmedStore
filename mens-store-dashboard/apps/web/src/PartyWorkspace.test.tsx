@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PartyEditor, PartyWorkspace } from './PartyWorkspace.js';
 import { ApiError, readJson } from './store-api.js';
 vi.mock('./store-api.js',async original=>({...await original<typeof import('./store-api.js')>(),readJson:vi.fn()}));
+vi.mock('./CustomerImport.js',()=>({CustomerImport:({saved}:{saved:()=>void})=><button onClick={saved}>إنهاء استيراد العملاء</button>}));
 const id='63c8a4d3-1a33-4d0a-bb8f-0a85ad29a14f';
 const supplier={id,organizationId:id,name:'شركة الملابس',phone:null,email:null,address:null,notes:null,active:true,version:1};
 const customer={...supplier,legacyId:null,name:'أحمد محمود',creditLimit:'10.1234'};
@@ -79,3 +80,5 @@ it('does not update unmounted workspaces when pending reads resolve or reject',a
   let resolve!:(value:unknown)=>void;vi.mocked(readJson).mockReturnValueOnce(new Promise(done=>{resolve=done;}));const loading=render(<PartyWorkspace kind="customers"/>);loading.unmount();await act(async()=>resolve({customers:[]}));
   let reject!:(reason:Error)=>void;vi.mocked(readJson).mockReturnValueOnce(new Promise((_done,fail)=>{reject=fail;}));const failing=render(<PartyWorkspace kind="suppliers"/>);failing.unmount();await act(async()=>reject(Error('offline')));
 });
+
+it("refreshes customer records after a completed import",async()=>{render(<PartyWorkspace kind="customers"/>);await screen.findByText("أحمد محمود");const before=vi.mocked(readJson).mock.calls.length;click("إنهاء استيراد العملاء");await waitFor(()=>expect(vi.mocked(readJson).mock.calls.length).toBeGreaterThan(before));});

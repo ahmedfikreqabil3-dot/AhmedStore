@@ -3,6 +3,7 @@ import type { createStockCountService } from '../src/modules/inventory/count.js'
 import type { createStockThresholdService } from '../src/modules/inventory/threshold.js';
 import { describe, expect, it, vi } from 'vitest';
 import { buildApp, type ProductService, type CustomerService, type SupplierService } from '../src/app.js';
+import type {PublicUser,SaleDocument} from '@ahmed-store/contracts';
 
 const authenticationService = {
   login: async () => ({ ok: false as const, reason: 'INVALID_CREDENTIALS' as const }),
@@ -39,11 +40,28 @@ const salesService = { post: async () => ({ ok: false as const, reason: 'INSUFFI
 const successIdentity = { register: async () => ({ ok: true as const, user: registeredUser }), auditUserCreated: async () => undefined };
 
 describe('API health endpoint', () => {
+  it('wires draft reads through session authentication and the scoped sales service',async()=>{
+    const authenticate=vi.fn(async()=>({ok:true as const,token:'draft-cookie',user:{...registeredUser,role:'CASHIER' as const}}));
+    const list=vi.fn(async()=>({items:[],total:0,limit:25,offset:0}));
+    const drafts={list} as unknown as NonNullable<import('../src/app.js').SalesService['drafts']>;
+    const app=await buildApp(successIdentity,{...authenticationService,authenticate},userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,{...salesService,drafts});
+    try{const response=await app.inject({url:'/api/v1/sale-drafts',headers:{cookie:'session=draft-cookie'}});expect(response.statusCode).toBe(200);expect((await app.inject('/api/v1/purchase-orders')).statusCode).toBe(403);expect(authenticate).toHaveBeenCalledWith('draft-cookie');expect(list).toHaveBeenCalledWith(registeredUser.organizationId,{limit:25,offset:0},registeredUser.id);}finally{await app.close();}
+  });
+  it('scopes invoice detail reads to the session tenant and cashier ownership',async()=>{
+    let role:PublicUser['role']|null='ADMIN';
+    const auth={...authenticationService,authenticate:async()=>role?{ok:true as const,token:'token',user:{...registeredUser,role}}:{ok:false as const,reason:'UNAUTHENTICATED' as const}};
+    const detail=vi.fn(async()=>null as SaleDocument|null),list=async()=>({sales:[],total:0,limit:25,offset:0});
+    const args:Parameters<typeof buildApp>=[successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService];args[22]={list,detail};const app=await buildApp(...args);
+    try{for(const selected of [null,'ADMIN','MANAGER','FINANCE','CASHIER','WAREHOUSE'] as const){role=selected;const response=await app.inject(`/api/v1/sales/${registeredUser.id}`);expect(response.statusCode).toBe(selected===null?401:selected==='WAREHOUSE'?403:404);if(selected&&selected!=='WAREHOUSE')expect(detail).toHaveBeenLastCalledWith(registeredUser.organizationId,registeredUser.id,selected==='CASHIER'?registeredUser.id:undefined);}
+      role='ADMIN';expect((await app.inject('/api/v1/sales/invalid')).statusCode).toBe(400);detail.mockResolvedValueOnce({id:registeredUser.id} as SaleDocument);expect((await app.inject(`/api/v1/sales/${registeredUser.id}`)).statusCode).toBe(200);
+    }finally{await app.close();}
+    for(const service of [undefined,{list}]){args[22]=service;const absent=await buildApp(...args);try{expect((await absent.inject(`/api/v1/sales/${registeredUser.id}`)).statusCode).toBe(503);}finally{await absent.close();}}
+  },30000);
   it('composes customer-import authentication and the workbook parser through the application',async()=>{
     const auth={...authenticationService,authenticate:async()=>({ok:true as const,token:'token',user:registeredUser})};
     const imports={template:async()=>Buffer.from('template'),preview:async()=>({valid:true,rows:[],errors:[]}),import:async()=>({ok:true as const,imported:1,replayed:false})};
     const app=await buildApp(successIdentity,auth,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,{...customerService,imports},salesService);
-    try{const response=await app.inject({method:'POST',url:'/api/v1/customers/import-preview',headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},payload:Buffer.from('workbook')});expect(response.statusCode).toBe(200);}finally{await app.close();}
+    try{expect((await app.inject('/api/v1/treasury/accounts')).statusCode).toBe(503);expect((await app.inject('/api/v1/reports/operations?kind=sales&from=2026-11-01&to=2026-11-02')).statusCode).toBe(503);const response=await app.inject({method:'POST',url:'/api/v1/customers/import-preview',headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},payload:Buffer.from('workbook')});expect(response.statusCode).toBe(200);}finally{await app.close();}
   });
   it('authorizes paginated party directories and reasoned lifecycle changes with session-owned scope',async()=>{
     const directory=vi.fn(async()=>({kind:'customers',parties:[],total:0,limit:25,offset:0})),lifecycle=vi.fn(async()=>({ok:true as const,party:{id:registeredUser.id,active:false,version:2}}));

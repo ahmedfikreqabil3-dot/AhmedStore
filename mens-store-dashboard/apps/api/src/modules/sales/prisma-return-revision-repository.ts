@@ -1,3 +1,4 @@
+import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
 import { minimumStockFrom } from '../inventory/stock-integrity.js';
@@ -25,6 +26,7 @@ export function createPrismaReturnRevisionRepository(prisma:PrismaClient):Return
     return retryWriteConflict(()=>prisma.$transaction(async (transaction) => {
       const existing=await transaction.salesReturn.findUnique({where:{organizationId_idempotencyKey:{organizationId:command.organizationId,idempotencyKey:command.idempotencyKey}}});
       if(existing){if(existing.saleId===null||existing.replacesReturnId===null)return {ok:false as const,reason:'IDEMPOTENCY_KEY_CONFLICT' as const};return {ok:true as const,replayed:true,salesReturn:{id:existing.id,saleId:existing.saleId,total:existing.total.toFixed(4)}};}
+      await assertOpenPostingPeriod(transaction,command.organizationId,command.actorUserId,command.input.occurredAt);
       const original = await transaction.salesReturn.findFirst({ where: { id: command.original.id, organizationId: command.organizationId, status: 'POSTED',saleId:command.input.saleId }, include: { lines: true, payments: true } });
       if (!original) return { ok: false as const, reason: 'RETURN_NOT_POSTED' as const };
       const actor=await transaction.user.findFirst({where:{id:command.actorUserId,organizationId:command.organizationId,active:true},select:{role:true}});if(!actor||!can(actor.role,'sales:write'))return {ok:false as const,reason:'ACTOR_UNAVAILABLE' as const};

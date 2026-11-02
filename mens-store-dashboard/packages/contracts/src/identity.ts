@@ -23,6 +23,7 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const publicUserSchema = z.object({
+  warehouseIds:z.array(z.string().uuid()).optional(),
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
   name: z.string(),
@@ -30,3 +31,7 @@ export const publicUserSchema = z.object({
   role: roleSchema
 });
 export type PublicUser = z.infer<typeof publicUserSchema>;
+
+export const managedUserSchema=publicUserSchema.extend({active:z.boolean(),version:z.string().datetime(),warehouseIds:z.array(z.string().uuid()).nullable()});
+export const userAccessSchema=z.object({role:roleSchema,active:z.boolean(),version:z.string().datetime(),warehouseIds:z.array(z.string().uuid()).max(100).nullable()}).strict().refine(x=>x.warehouseIds===null||new Set(x.warehouseIds).size===x.warehouseIds.length);
+export const resetPasswordSchema=z.object({password:z.string().min(12).max(128),version:z.string().datetime()}).strict();

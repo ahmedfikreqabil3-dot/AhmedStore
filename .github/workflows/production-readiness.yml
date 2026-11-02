@@ -1,0 +1,41 @@
+name: Production readiness
+on: [push, pull_request]
+permissions: {contents: read}
+concurrency:
+  group: readiness-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run: {working-directory: mens-store-dashboard}
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_USER: postgres, POSTGRES_PASSWORD: ci, POSTGRES_DB: ahmed_store_api_tests}
+        ports: ["55432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci@127.0.0.1:55432/ahmed_store_api_tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm, cache-dependency-path: mens-store-dashboard/package-lock.json}
+      - run: npm ci --ignore-scripts
+      - run: npx prisma generate --schema database/prisma/schema.prisma
+      - run: npx prisma migrate deploy --schema database/prisma/schema.prisma
+      - run: npm run typecheck && npm run migration:typecheck
+      - run: npm audit --omit=dev --omit=optional --audit-level=high
+      - run: node tools/run-regression.mjs
+      - run: npm test --workspace=@ahmed-store/contracts
+      - run: node legacy/backend/test/business.test.mjs
+      - run: npx vitest run --config "$PWD/tools/production/vitest.config.ts" --root tools/production
+      - run: node --import tsx tools/production/ci-migration.ts
+      - run: node --import tsx tools/production/ci-role.ts
+      - run: node tools/production/build.mjs && npm run build --workspace=@ahmed-store/web
+      - run: docker build -f deploy/Dockerfile --target api -t ahmed-store-api:ci .
+      - run: docker build -f deploy/Dockerfile --target web -t ahmed-store-web:ci .
+      - run: docker build -f deploy/Dockerfile --target operations -t ahmed-store-ops:ci .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: regression-results, path: mens-store-dashboard/.local/regression}

@@ -15,12 +15,26 @@
     "test": "npm run test --workspaces --if-present",
     "coverage": "npm run coverage --workspace=@ahmed-store/contracts && npm run coverage --workspace=@ahmed-store/api && npm run coverage --workspace=@ahmed-store/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "db:validate": "prisma validate --schema database/prisma/schema.prisma"
+    "db:validate": "prisma validate --schema database/prisma/schema.prisma",
+    "test:app-regression": "node tools/run-regression.mjs",
+    "migration:validate": "tsx tools/migration/cli.ts validate",
+    "migration:dry-run": "tsx tools/migration/cli.ts dry-run",
+    "migration:apply": "tsx tools/migration/cli.ts apply",
+    "migration:reconcile": "tsx tools/migration/cli.ts reconcile",
+    "migration:trial": "tsx tools/migration/trial.ts",
+    "migration:typecheck": "tsc -p tools/tsconfig.json --noEmit",
+    "build:production": "node tools/production/build.mjs && npm run build --workspace=@ahmed-store/web",
+    "production:check": "tsx tools/production/env-check.ts",
+    "db:backup": "node dist/ops/database.mjs backup",
+    "db:restore": "node dist/ops/database.mjs restore",
+    "monitor:check": "node dist/ops/monitor.mjs",
+    "performance:check": "node dist/ops/perf.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "prisma": "6.19.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "zod": "^4.6.7"
   },
   "allowScripts": {
     "@prisma/client@6.19.0": true,
@@ -28,5 +42,12 @@
     "esbuild@0.28.2": true,
     "esbuild@0.25.12": true,
     "prisma@6.19.0": true
+  },
+  "overrides": {
+    "@prisma/config": {
+      "effect": "^3.20.0",
+      "deepmerge-ts": "^8.0.2"
+    },
+    "zod": "^4.6.7"
   }
 }

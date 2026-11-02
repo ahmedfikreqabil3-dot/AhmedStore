@@ -1,0 +1,17 @@
+import {z} from 'zod';
+import {saleLineInputSchema,salePaymentInputSchema} from './sales.js';
+export const draftKindSchema=z.enum(['QUOTATION','HELD']);
+export const draftStatusSchema=z.enum(['OPEN','CANCELLED','CONVERTED']);
+export const draftInputSchema=z.object({customerId:z.string().uuid(),warehouseId:z.string().uuid(),lines:z.array(saleLineInputSchema).min(1).max(100)}).strict();
+export const createDraftSchema=draftInputSchema.extend({kind:draftKindSchema});
+export const updateDraftSchema=draftInputSchema.extend({version:z.number().int().positive()});
+export const draftVersionSchema=z.object({version:z.number().int().positive()}).strict();
+export const convertDraftSchema=draftVersionSchema.extend({payments:z.array(salePaymentInputSchema).min(1).max(10)});
+export const draftQuerySchema=z.object({kind:draftKindSchema.optional(),status:draftStatusSchema.optional(),limit:z.coerce.number().int().min(1).max(100).default(25),offset:z.coerce.number().int().min(0).max(100000).default(0)}).strict();
+export const saleDraftSchema=draftInputSchema.extend({id:z.string().uuid(),kind:draftKindSchema,status:draftStatusSchema,version:z.number().int().positive(),customerName:z.string(),warehouseName:z.string(),lines:z.array(saleLineInputSchema.extend({productName:z.string(),sku:z.string()})),subtotal:z.string(),discount:z.string(),total:z.string(),saleId:z.string().uuid().nullable(),createdAt:z.coerce.date(),updatedAt:z.coerce.date()}).strip();
+export const draftPageSchema=z.object({items:z.array(saleDraftSchema),total:z.number().int().nonnegative(),limit:z.number(),offset:z.number()});
+export type DraftInput=z.infer<typeof draftInputSchema>;
+export type SaleDraft=z.infer<typeof saleDraftSchema>;
+export type DraftQuery=z.infer<typeof draftQuerySchema>;
+export const saveDraftCommandSchema=z.discriminatedUnion('action',[z.object({action:z.literal('CREATE'),input:createDraftSchema}),z.object({action:z.literal('UPDATE'),id:z.string().uuid(),input:updateDraftSchema})]);
+export const draftActionCommandSchema=z.discriminatedUnion('action',[z.object({action:z.literal('cancel'),id:z.string().uuid(),input:draftVersionSchema}),z.object({action:z.literal('convert'),id:z.string().uuid(),input:convertDraftSchema})]);

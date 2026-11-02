@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LivePOS } from './LivePOS.js';
 import { ApiError, postSale, saleOptions, type SaleOptions } from './store-api.js';
+vi.mock('./InvoiceDocument.js',()=>({InvoiceDocument:()=> <section>إيصال الفاتورة الحية</section>}));
 vi.mock('./store-api.js', async (original) => ({ ...await original<typeof import('./store-api.js')>(), saleOptions: vi.fn(), postSale: vi.fn() }));
 const id = 'a62886aa-d435-4145-a551-37b675a86f84';
 const options: SaleOptions = { products: [{ id, name: 'قميص', sku: 'SH-1', barcode: '123', salePrice: '0.1000' }, { id: 'b62886aa-d435-4145-a551-37b675a86f84', name: 'بنطلون', sku: 'TR-1', barcode: null, salePrice: '1.0000' }], customers: [{ id, name: 'العميل' }], warehouses: [{ id, name: 'الفرع' }] };
@@ -19,6 +20,18 @@ function selections() { fireEvent.change(screen.getByLabelText('فرع البي�
 function review() { fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' })); }
 
 describe('real POS commands', () => {
+  it('refreshes master choices when returning to POS without losing the cart or selections',async()=>{
+    const previous=location.hash;
+    await ready();selections();scan();
+    vi.mocked(saleOptions).mockResolvedValue({...options,warehouses:[...options.warehouses,{id:'new-branch',name:'الفرع الجديد'}]});
+    await act(async()=>{history.replaceState(null,'','#categories');window.dispatchEvent(new HashChangeEvent('hashchange'));});
+    expect(saleOptions).toHaveBeenCalledTimes(1);
+    await act(async()=>{history.replaceState(null,'','#pos');window.dispatchEvent(new HashChangeEvent('hashchange'));});
+    await screen.findByRole('option',{name:'الفرع الجديد'});expect(screen.getByLabelText('كمية قميص')).toHaveValue(1);expect(screen.getByLabelText('فرع البيع')).toHaveValue(id);expect(screen.getByLabelText('عميل البيع')).toHaveValue(id);
+    const count=vi.mocked(saleOptions).mock.calls.length;cleanup();
+    await act(async()=>{window.dispatchEvent(new HashChangeEvent('hashchange'));history.replaceState(null,'',previous||location.pathname);});expect(saleOptions).toHaveBeenCalledTimes(count);
+    vi.mocked(saleOptions).mockResolvedValue(options);
+  });
   it('identifies the selected branch in checkout and payment review without changing a recovered command', async () => {
     await ready();
     expect(within(screen.getByRole('complementary')).getByText('لم يتم اختيار فرع')).toBeVisible();
@@ -119,3 +132,5 @@ it('does not discard an uncertain recovered sale when a later retry is rejected'
   await waitFor(()=>expect(screen.getAllByRole('alert')[0]).toHaveTextContent('تعذر تأكيد نتيجة الحفظ'));
   expect(JSON.parse(sessionStorage.getItem(storageKey)!).key).toBe('original-key');expect(screen.getByLabelText('فرع البيع')).toBeDisabled();
 });
+
+it("opens the posted receipt without reposting the sale",async()=>{await ready();selections();scan();review();fireEvent.click(screen.getByRole("button",{name:"تأكيد البيع والدفع"}));await screen.findByRole("button",{name:"عرض وطباعة آخر فاتورة"});fireEvent.click(screen.getByRole("button",{name:"عرض وطباعة آخر فاتورة"}));expect(screen.getByText("إيصال الفاتورة الحية")).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"إخفاء الإيصال"}));expect(screen.queryByText("إيصال الفاتورة الحية")).not.toBeInTheDocument();expect(postSale).toHaveBeenCalledOnce();});

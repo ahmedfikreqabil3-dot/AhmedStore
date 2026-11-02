@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PublicUser, RegisterUserInput } from '@ahmed-store/contracts';
+import {publicUserSchema,type PublicUser,type RegisterUserInput} from '@ahmed-store/contracts';
 import { hashPassword } from './password.js';
 
 export type StoredUser = PublicUser & { passwordHash: string; active: boolean };
@@ -30,7 +30,7 @@ export function createIdentityService(repository: UserRepository) {
         active: true
       });
       const { passwordHash: _passwordHash, active: _active, ...publicUser } = user;
-      return { ok: true, user: publicUser };
+      return { ok: true, user: publicUserSchema.parse(publicUser) };
     },
     async auditUserCreated(actorUserId: string, user: PublicUser) {
       await repository.createAuditEvent({ organizationId: user.organizationId, actorUserId, action: 'USER_CREATED', entityType: 'User', entityId: user.id });

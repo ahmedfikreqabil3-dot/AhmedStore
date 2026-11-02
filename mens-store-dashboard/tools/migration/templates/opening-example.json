@@ -1,0 +1,19 @@
+{
+  "schemaVersion":1,"sourceSystem":"legacy-example","batchKey":"opening-v1","asOf":"2026-11-01T00:00:00.000Z",
+  "organization":{"key":"trial-store","name":"Migration Trial Store"},
+  "categories":[{"key":"clothing","name":"Clothing"}],
+  "warehouses":[{"key":"main","name":"Main Branch"},{"key":"second","name":"Second Branch"}],
+  "products":[
+    {"key":"shirt","name":"Trial Shirt","sku":"SHIRT-001","barcode":"100000001","categoryKey":"clothing","salePrice":"19.9500","costPrice":"10.1234"},
+    {"key":"jeans","name":"Trial Jeans","sku":"JEANS-001","barcode":null,"categoryKey":"clothing","salePrice":"200.0000","costPrice":"120.5000"}
+  ],
+  "customers":[{"key":"customer-debt","name":"Customer Receivable","creditLimit":"0"},{"key":"customer-credit","name":"Customer Advance","creditLimit":"500.0000"}],
+  "suppliers":[{"key":"supplier-debt","name":"Supplier Payable"},{"key":"supplier-credit","name":"Supplier Advance"}],
+  "treasuryAccounts":[{"key":"cash","name":"Opening Cash","paymentMethod":"CASH","isDefault":true},{"key":"card","name":"Opening Card","paymentMethod":"CARD","isDefault":true}],
+  "opening":{
+    "stock":[{"warehouseKey":"main","productKey":"shirt","quantity":"10.2500"},{"warehouseKey":"second","productKey":"shirt","quantity":"2.0000"},{"warehouseKey":"main","productKey":"jeans","quantity":"3.0000"}],
+    "treasury":[{"accountKey":"cash","amount":"1000.1234"},{"accountKey":"card","amount":"200.0000"}],
+    "customers":[{"customerKey":"customer-debt","amount":"150.2500"},{"customerKey":"customer-credit","amount":"-20.0000"}],
+    "suppliers":[{"supplierKey":"supplier-debt","amount":"400.5000"},{"supplierKey":"supplier-credit","amount":"-30.0000"}]
+  }
+}

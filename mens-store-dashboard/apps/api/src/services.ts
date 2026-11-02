@@ -1,3 +1,12 @@
+import {createUserAdministration} from './modules/identity/administration.js';
+import {branchContext,createBranchScopedClient} from './modules/identity/branch-scope.js';
+import {publicUserSchema} from '@ahmed-store/contracts';
+import {createManagementService} from './modules/catalogue/management.js';
+import {createPurchaseOrderService} from './modules/purchasing/orders.js';
+import { createSaleDraftService } from './modules/sales/drafts.js';
+import { createSaleDocumentService } from './modules/sales/document.js';
+import { createTreasuryService } from './modules/finance/treasury-service.js';
+import { createReportsService } from './modules/reporting/reports.js';
 import { createPrismaExpenseRepository } from './modules/finance/prisma-expense-repository.js';
 import { createExpenseHistoryService } from './modules/finance/expense-history.js';
 import { createPrismaShiftTotalsRepository } from './modules/finance/prisma-shift-totals-repository.js';
@@ -49,21 +58,22 @@ import { createProductImportService } from './modules/catalogue/product-import.j
 import { createSupplierImportService } from './modules/parties/supplier-import.js';
 
 export function createApplicationServices(prisma:PrismaClient){
+const unscoped=prisma;prisma=createBranchScopedClient(prisma);
 
-const identityService = createIdentityService({
+const identityService = {administration:createUserAdministration(prisma),...createIdentityService({
   async findByEmail(organizationId, email) {
     const user = await prisma.user.findUnique({ where: { organizationId_email: { organizationId, email } } });
     return user;
   },
   async create(user) {
-    return prisma.user.create({ data: user });
+    return prisma.user.create({ data: {...user,allWarehouses:user.role==='ADMIN'} });
   },
   async createAuditEvent(input) {
     await prisma.auditEvent.create({ data: input });
   }
-});
+})};
 
-const authenticationService = createSessionService({
+const sessionService = createSessionService({
   async findUserByEmail(organizationId, email) {
     return prisma.user.findUnique({ where: { organizationId_email: { organizationId, email } } });
   },
@@ -75,14 +85,17 @@ const authenticationService = createSessionService({
   async createAuditEvent(input) { await prisma.auditEvent.create({ data: input }); }
 });
 
+async function scopedAuth(auth:Awaited<ReturnType<typeof sessionService.authenticate>>){if(auth.ok){const u=await unscoped.user.findUniqueOrThrow({where:{id:auth.user.id},include:{branchPermissions:{select:{warehouseId:true}}}});if(!u.allWarehouses&&u.role!=='ADMIN')auth.user.warehouseIds=u.branchPermissions.map(b=>b.warehouseId);}return auth;}
+const authenticationService={...sessionService,branchScopeEnabled:true,async login(input:Parameters<typeof sessionService.login>[0]){return scopedAuth(await sessionService.login(input));},async authenticate(token:string|undefined){const context=branchContext.getStore();if(context?.auth)return context.auth;const auth=await scopedAuth(await sessionService.authenticate(token));if(context){context.auth=auth;if(auth.ok)context.warehouseIds=auth.user.warehouseIds;}return auth;}};
+
 const userDirectoryService = {
   async list(organizationId: string) {
     const users = await prisma.user.findMany({ where: { organizationId }, orderBy: { createdAt: 'asc' } });
-    return users.map(({ passwordHash: _passwordHash, active: _active, ...user }) => user);
+    return users.map(user=>publicUserSchema.parse(user));
   }
 };
 
-const categoryService = createCategoryService({
+const categoryService = {management:createManagementService(prisma),...createCategoryService({
   async list(organizationId: string) {
     return prisma.category.findMany({ where: { organizationId, archivedAt: null }, orderBy: { name: 'asc' } });
   },
@@ -94,7 +107,7 @@ const categoryService = createCategoryService({
     const updated = await prisma.category.updateMany({ where: { id, organizationId, archivedAt: null }, data: { archivedAt } });
     return updated.count === 0 ? null : prisma.category.findUnique({ where: { id } });
   }
-});
+})};
 
 const categoryImportService = createCategoryImportService({
   async findNames(organizationId, names) { const categories = await prisma.category.findMany({ where: { organizationId, name: { in: names } }, select: { name: true } }); return categories.map((category) => category.name); },
@@ -185,7 +198,7 @@ const supplierImportService = createSupplierImportService({
   async createAtomically(organizationId, actorUserId, suppliers) { await prisma.$transaction(async (transaction) => { await transaction.supplier.createMany({ data: suppliers.map((supplier) => ({ ...supplier, organizationId, active: true, version: 1 })) }); await transaction.auditEvent.create({ data: { organizationId, actorUserId, action: 'SUPPLIERS_IMPORTED', entityType: 'SupplierImport', entityId: crypto.randomUUID() } }); }); }
 });
 
-const purchaseService = createPurchaseService(createPrismaPurchaseRepository(prisma));
+const purchaseService = {...createPurchaseService(createPrismaPurchaseRepository(prisma)),orders:createPurchaseOrderService(prisma)};
 
 const purchaseReturnService = createPurchaseReturnService(createPrismaPurchaseReturnRepository(prisma));
 
@@ -199,7 +212,7 @@ const salesExportService = createSalesExportService({
   async audit(organizationId, actorUserId) { await prisma.auditEvent.create({ data: { organizationId, actorUserId, action: 'SALES_HISTORY_EXPORTED', entityType: 'SaleExport', entityId: crypto.randomUUID() } }); }
 });
 
-const salesHistoryService = createSalesHistoryService({
+const salesHistoryService = {...createSaleDocumentService(prisma),...createSalesHistoryService({
   async list(organizationId, query) {
     const where = { organizationId, occurredAt: { gte: query.from, lte: query.to }, warehouseId: query.warehouseId, customerId: query.customerId };
     const sales = await prisma.sale.findMany({ where, include: { customer: true, warehouse: true }, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], skip: query.offset, take: query.limit });
@@ -208,9 +221,9 @@ const salesHistoryService = createSalesHistoryService({
   async count(organizationId, query) {
     return prisma.sale.count({ where: { organizationId, occurredAt: { gte: query.from, lte: query.to }, warehouseId: query.warehouseId, customerId: query.customerId } });
   }
-});
+})};
 
-const salesService = createSalesService(createPrismaSalesRepository(prisma));
+const salesService = {...createSalesService(createPrismaSalesRepository(prisma)),drafts:createSaleDraftService(prisma)};
 
 const invoiceReturnService = createInvoiceReturnService(createPrismaInvoiceReturnRepository(prisma));
 
@@ -232,5 +245,7 @@ const inventoryTransferService=createInventoryTransferService(prisma);
 const stockCountService=createStockCountService(prisma);
 const stockThresholdService=createStockThresholdService(prisma);
 
-return {identityService,authenticationService,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,invoiceReturnService,noInvoiceReturnService,noInvoiceApprovalService,shiftTotalsService,returnRevisionService,shiftService,expenseService,supplierService,purchaseService,purchaseReturnService,purchaseRevisionService,salesExportService,salesHistoryService,categoryImportService,productImportService,supplierImportService,inventoryTransferService,stockCountService,stockThresholdService};
+const reportsService=createReportsService(prisma);
+const treasuryService=createTreasuryService(prisma);
+return {treasuryService,reportsService,identityService,authenticationService,userDirectoryService,categoryService,productService,warehouseService,stockService,inventoryMovementService,customerService,salesService,invoiceReturnService,noInvoiceReturnService,noInvoiceApprovalService,shiftTotalsService,returnRevisionService,shiftService,expenseService,supplierService,purchaseService,purchaseReturnService,purchaseRevisionService,salesExportService,salesHistoryService,categoryImportService,productImportService,supplierImportService,inventoryTransferService,stockCountService,stockThresholdService};
 }

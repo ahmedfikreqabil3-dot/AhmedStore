@@ -2,6 +2,8 @@ import { Prisma, type PrismaClient, type Shift } from '@prisma/client';
 import { can } from '../identity/authorization.js';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
 import { ShiftActorUnavailableError } from './shift-service.js';
+import { PostingPeriodError } from './posting-period.js';
+import { calculateShiftTotals } from './shift-totals.js';
 import type { ShiftRepository } from './shift-service.js';
 function shiftRecord(shift: Shift) {
   return { ...shift, expectedCash: shift.expectedCash?.toFixed(4) ?? null, countedCash: shift.countedCash?.toFixed(4) ?? null, cashDifference: shift.cashDifference?.toFixed(4) ?? null };
@@ -26,7 +28,11 @@ export function createPrismaShiftRepository(prisma:PrismaClient):ShiftRepository
   async close(organizationId, shiftId, userId, closedAt, reconciliation) {
     return retryWriteConflict(()=>prisma.$transaction(async tx=>{
       const actor=await tx.user.findFirst({where:{id:userId,organizationId,active:true},select:{role:true}});if(!actor||!can(actor.role,'shifts:manage_own'))return null;
-      const updated=await tx.shift.updateMany({where:{id:shiftId,organizationId,userId,status:'OPEN'},data:{status:'CLOSED',closedAt,closedByUserId:userId,...reconciliation}});if(!updated.count)return null;
+      const current=await tx.shift.findFirst({where:{id:shiftId,organizationId,userId,status:'OPEN'}});if(!current)return null;
+      const entries=await tx.treasuryTransaction.findMany({where:{organizationId,actorUserId:userId,occurredAt:{gte:current.openedAt,lt:closedAt}}});
+      const expected=calculateShiftTotals(entries.map(row=>({...row,amount:row.amount.toFixed(4)}))).methods.find(row=>row.method==='CASH')?.net ?? '0.0000';
+      if(expected!==reconciliation.expectedCash)throw new PostingPeriodError('SHIFT_TOTALS_CHANGED');
+      await tx.shift.update({where:{id:shiftId},data:{status:'CLOSED',closedAt,closedByUserId:userId,...reconciliation}});
       const shift=await tx.shift.findUniqueOrThrow({where:{id:shiftId}});await tx.auditEvent.create({data:{organizationId,actorUserId:userId,action:'SHIFT_CLOSED',entityType:'Shift',entityId:shift.id,details:{...reconciliation,closedAt:closedAt.toISOString()}}});return shiftRecord(shift);
     },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   },

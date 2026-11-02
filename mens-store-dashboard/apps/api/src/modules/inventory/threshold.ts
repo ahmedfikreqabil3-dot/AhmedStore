@@ -1,3 +1,4 @@
+import {branchPredicate} from '../identity/branch-scope.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { stockThresholdSchema, type SetStockThresholdInput, type StockThresholdQuery } from '@ahmed-store/contracts';
 import { can } from '../identity/authorization.js';
@@ -7,7 +8,7 @@ export type SetThresholdResult={ok:true;threshold:{id:string;minimum:string;vers
 export function createStockThresholdService(prisma:PrismaClient){return {
   async list(organizationId:string,query:StockThresholdQuery){
     const asOf=query.asOf ?? new Date(),warehouseId=query.warehouseId ?? null;
-    const levels=Prisma.sql`SELECT t."id",t."productId",p."name" AS "productName",p."sku",t."warehouseId",w."name" AS "warehouseName",t."minimum",t."version",t."updatedAt",COALESCE((SELECT SUM(i."quantity") FROM "InventoryTransaction" i WHERE i."organizationId"=t."organizationId" AND i."warehouseId"=t."warehouseId" AND i."productId"=t."productId" AND i."occurredAt"<=${asOf.toISOString()}::timestamp),0::numeric) AS "quantity" FROM "StockThreshold" t JOIN "Product" p ON p."organizationId"=t."organizationId" AND p."id"=t."productId" AND p."active"=true JOIN "Warehouse" w ON w."organizationId"=t."organizationId" AND w."id"=t."warehouseId" AND w."active"=true WHERE t."organizationId"=${organizationId} AND (${warehouseId}::text IS NULL OR t."warehouseId"=${warehouseId})`;
+    const levels=Prisma.sql`SELECT t."id",t."productId",p."name" AS "productName",p."sku",t."warehouseId",w."name" AS "warehouseName",t."minimum",t."version",t."updatedAt",COALESCE((SELECT SUM(i."quantity") FROM "InventoryTransaction" i WHERE i."organizationId"=t."organizationId" AND i."warehouseId"=t."warehouseId" AND i."productId"=t."productId" AND i."occurredAt"<=${asOf.toISOString()}::timestamp),0::numeric) AS "quantity" FROM "StockThreshold" t JOIN "Product" p ON p."organizationId"=t."organizationId" AND p."id"=t."productId" AND p."active"=true JOIN "Warehouse" w ON w."organizationId"=t."organizationId" AND w."id"=t."warehouseId" AND w."active"=true WHERE t."organizationId"=${organizationId} AND (${warehouseId}::text IS NULL OR t."warehouseId"=${warehouseId}) ${branchPredicate('t."warehouseId"')}`;
     return prisma.$transaction(async tx=>{
       const [rows,totals]=await Promise.all([
         tx.$queryRaw<ThresholdRow[]>(Prisma.sql`WITH levels AS (${levels}) SELECT * FROM levels WHERE (${query.mode}='all' OR "quantity"<="minimum") ORDER BY "productName","warehouseName","id" LIMIT ${query.limit} OFFSET ${query.offset}`),

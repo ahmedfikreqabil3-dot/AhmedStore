@@ -1,0 +1,1 @@
+{"extends":"../tsconfig.base.json","compilerOptions":{"noEmit":true,"declaration":false,"sourceMap":false},"include":["migration/**/*.ts","production/**/*.ts"]}

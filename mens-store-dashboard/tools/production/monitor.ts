@@ -1,0 +1,4 @@
+import fs from 'node:fs';
+const url=process.env.READINESS_URL??'http://127.0.0.1:3000/api/v1/health/ready';let ready=false;try{ready=(await fetch(url,{signal:AbortSignal.timeout(5000)})).ok;}catch{}
+let backupFresh=false,age:number|null=null;const dir=process.env.BACKUP_DIRECTORY;if(dir){try{const manifests=fs.readdirSync(dir).map(name=>dir+'/'+name+'/manifest.json').filter(file=>fs.existsSync(file));const latest=Math.max(...manifests.map(file=>new Date(JSON.parse(fs.readFileSync(file,'utf8')).createdAt).getTime()));age=Math.max(0,(Date.now()-latest)/1000);backupFresh=Number.isFinite(age)&&age<Number(process.env.MAX_BACKUP_AGE_SECONDS??172800);}catch{}}
+const healthy=ready&&(!dir||backupFresh);console.log(JSON.stringify({event:'monitor_check',ready,backupFresh:dir?backupFresh:null,backupAgeSeconds:age,healthy}));if(!healthy)process.exitCode=1;

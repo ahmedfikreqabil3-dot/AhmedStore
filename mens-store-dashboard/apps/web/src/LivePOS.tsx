@@ -1,3 +1,4 @@
+import { InvoiceDocument } from './InvoiceDocument.js';
 import { useEffect, useRef, useState } from 'react';
 import type { CreateSaleInput, PaymentMethod } from '@ahmed-store/contracts';
 import { ApiError, decimal, displayMoney, loadAttempt, postSale, saleOptions, saleRejectionMessage, units, type SaleAttempt, type SaleOptions, type SaleProduct } from './store-api.js';
@@ -21,9 +22,15 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [lastSaleId,setLastSaleId]=useState(''),[showReceipt,setShowReceipt]=useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
 
+  useEffect(() => {
+    const refresh = () => { if (location.hash === '#pos') setReload(value => value + 1); };
+    window.addEventListener('hashchange', refresh);
+    return () => window.removeEventListener('hashchange', refresh);
+  }, []);
   useEffect(() => {
     let active = true;
     setOptions(null); setLoadError('');
@@ -85,7 +92,7 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
       const result = await postSale(next.input, next.key);
       sessionStorage.removeItem(storageKey);
       setAttempt(null); setCart([]); setDiscount('0'); setPayments([{ method: 'CASH', amount: '' }]);
-      setSuccess(`تم تسجيل الفاتورة ${result.id} بنجاح. الإجمالي ${displayMoney(units(result.total)!)} ج.م.`);
+      setLastSaleId(result.id);setShowReceipt(false);setSuccess(`تم تسجيل الفاتورة ${result.id} بنجاح. الإجمالي ${displayMoney(units(result.total)!)} ج.م.`);
       dialog.current!.close();
     } catch (reason) {
       if (!attempt && reason instanceof ApiError && reason.status === 409) {
@@ -99,7 +106,7 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
   const selectedBranchName = options.warehouses.find((branch) => branch.id === selectedBranchId)?.name ?? (selectedBranchId ? 'فرع الفاتورة المحفوظة غير متاح في القائمة الحالية' : 'لم يتم اختيار فرع');
   return <>
     {attempt && <div className="info-callout recovery-banner" role="status">توجد محاولة تسجيل فاتورة لم تُحسم نتيجتها. البيانات مقفلة لحين إعادة المحاولة بنفس مفتاح العملية. <button className="text-button" onClick={() => dialog.current!.showModal()}>التحقق وإعادة المحاولة</button></div>}
-    {success && <p role="status" className="success-banner">{success}</p>}
+    {success && <><p role="status" className="success-banner">{success}</p><button className="button secondary" onClick={()=>setShowReceipt(value=>!value)}>{showReceipt ? 'إخفاء الإيصال' : 'عرض وطباعة آخر فاتورة'}</button>{showReceipt&&<InvoiceDocument key={lastSaleId} saleId={lastSaleId}/>}</>}
     <div className="pos-layout">
       <section className="invoice-workspace" aria-labelledby="live-invoice-title">
         <div className="panel-heading"><div className="panel-heading-title"><span className="section-icon"><Icon name="receipt"/></span><div><h2 id="live-invoice-title">فاتورة بيع جديدة</h2><p>الأسعار من الكتالوج والحفظ من خلال النظام</p></div></div><span className="draft-label">{attempt ? 'بانتظار التأكيد' : 'مسودة'}</span></div>

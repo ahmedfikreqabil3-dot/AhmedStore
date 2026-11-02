@@ -1,0 +1,159 @@
+{
+  "verifiedAt": "2026-11-02T15:08:05.367792+00:00",
+  "scope": "Four requested production-readiness implementation packages delivered and verified locally; public activation is not performed.",
+  "phase5": {
+    "corePercent": 100,
+    "ownerAccepted": true,
+    "realLegacyCutover": "manual CLI when owner source data is ready"
+  },
+  "migration": {
+    "migration": "20261102005000_customer_opening_balances",
+    "applied": true,
+    "backupTablesVerified": 41,
+    "restoreSchemaVerified": true,
+    "businessTablesUnchanged": 38,
+    "migrationChecksumsVerified": 31,
+    "demoFinancialWrites": 0
+  },
+  "runtimeDatabaseHardening": {
+    "runtimeRoleLeastPrivilegeVerified": true,
+    "immutableLedgersProtected": true,
+    "privilegedRoleFlagsDisabled": true,
+    "productionDatabaseReadiness": true,
+    "publicTablesUnchanged": 41,
+    "financialWrites": 0,
+    "verifiedAt": "2026-11-02T14:53:01.283Z"
+  },
+  "finalBackupRestore": {
+    "encrypted": true,
+    "tables": 41,
+    "schemaVerified": true,
+    "sourceDatabase": "ahmed_store_demo",
+    "restoredAt": "2026-11-02T14:59:47.396Z",
+    "archiveChecksum": "SHA-256",
+    "encryption": "AES-256-GCM",
+    "proofAndKeyLocation": "Private .local/phase6; excluded from Git"
+  },
+  "automatedTests": {
+    "api": 335,
+    "web": 355,
+    "contracts": 35,
+    "fullRegressionTotal": 725,
+    "freshIsolatedMigration": 7,
+    "freshRestrictedRoleAndBackupTests": 8,
+    "legacyBusinessScript": "passed",
+    "typescriptApiWebTools": "passed",
+    "prismaSchema": "valid",
+    "productionApiAndOpsBundle": "built",
+    "productionWebBundle": "built",
+    "coverage": "No full-source coverage percentage claimed"
+  },
+  "productionEnvironment": {
+    "validated": true,
+    "isolatedDatabase": true,
+    "localTlsOnly": true,
+    "testListenersRetained": false
+  },
+  "httpsBrowser": {
+    "httpsBrowserLogin": true,
+    "secureHttpOnlyStrictCookie": true,
+    "desktopMobileChecked": true,
+    "browserErrors": [],
+    "consoleErrors": [],
+    "blockedExternalRequests": [],
+    "financialWrites": 0
+  },
+  "securitySmoke": {
+    "httpsPinnedCaVerified": true,
+    "wrongOriginRejected": true,
+    "unauthenticatedCatalogueRejected": true,
+    "publicMetricsBlocked": true,
+    "internalMetricsTokenEnforced": true,
+    "authRateLimitedWithRetryAfter": true,
+    "structuredRequestAndSecurityLogs": true,
+    "secretsAbsentFromLogs": true,
+    "financialWrites": 0
+  },
+  "performanceBaseline": {
+    "requests": 100,
+    "concurrency": 100,
+    "failed": 0,
+    "p50Ms": 499,
+    "p95Ms": 646,
+    "maxMs": 649,
+    "requestsPerSecond": 136,
+    "p95LimitMs": 1000,
+    "tlsCertificateVerified": true,
+    "secureCookieVerified": true,
+    "securityHeadersVerified": true,
+    "financialWrites": 0,
+    "passed": true,
+    "historicalProductionP95TargetMs": 500,
+    "historicalProductionTargetCertified": false,
+    "sustained100ActiveUserTest": false
+  },
+  "monitoringSmoke": {
+    "event": "monitor_check",
+    "ready": true,
+    "backupFresh": true,
+    "backupAgeSeconds": 66.592,
+    "healthy": true
+  },
+  "deploymentValidation": {
+    "yamlFilesParsed": 4,
+    "privateDatabaseApiAndMetrics": true,
+    "runtimeReadOnly": true,
+    "ownerSecretExcludedFromApi": true,
+    "dockerImageBuildExecuted": false,
+    "caddyConfig": "valid",
+    "remoteCiWorkflowExecuted": false,
+    "publicDeploymentExecuted": false,
+    "alertDeliveryConfigured": false
+  },
+  "runtimeDependencyAudit": {
+    "info": 0,
+    "low": 1,
+    "moderate": 11,
+    "high": 0,
+    "critical": 0,
+    "total": 12
+  },
+  "remainingAuditPackages": {
+    "archiver": "moderate",
+    "archiver-utils": "moderate",
+    "exceljs": "moderate",
+    "fast-uri": "moderate",
+    "fastify": "low",
+    "glob": "moderate",
+    "minimatch": "moderate",
+    "readdir-glob": "moderate",
+    "rimraf": "moderate",
+    "uuid": "moderate",
+    "vite": "moderate",
+    "zip-stream": "moderate"
+  },
+  "remainingOperationalAcceptance": [
+    "Build and exercise all container targets on a Docker host; remote CI has not run.",
+    "Provision production hostname/HTTPS/secrets and validate externally delivered alerts and uptime monitoring.",
+    "Recheck representative sustained workloads against historical p95 <500 ms target.",
+    "Review residual moderate/low dependency advisories before public activation.",
+    "Owner executes real-source migration using the new CLI when ready."
+  ],
+  "demo": {
+    "financialWrites": 0,
+    "apiPort": 3000,
+    "webPort": 5173,
+    "servicesLeftRunning": true,
+    "apiRunning": true,
+    "webRunning": true,
+    "authenticatedReadEndpoints": 5,
+    "businessTablesUnchanged": 38,
+    "demoFinancialWrites": 0,
+    "verifiedAt": "2026-11-02T15:09:55.914Z"
+  },
+  "finalServiceCheck": {
+    "demoApiStatus": 200,
+    "isolatedTestProcessesStopped": true,
+    "demoWebStatus": 200
+  }
+}

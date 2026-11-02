@@ -1,3 +1,4 @@
+import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
 import { can } from '../identity/authorization.js';
@@ -21,6 +22,7 @@ export function createPrismaInvoiceReturnRepository(prisma:PrismaClient):Returns
       const existing=await transaction.salesReturn.findUnique({where:{organizationId_idempotencyKey:{organizationId:command.organizationId,idempotencyKey:command.idempotencyKey}}});
       if(existing){if(existing.saleId===null||existing.replacesReturnId!==null)return {ok:false as const,reason:'IDEMPOTENCY_KEY_CONFLICT' as const};return {ok:true as const,replayed:true,salesReturn:{id:existing.id,saleId:existing.saleId,total:existing.total.toFixed(4)}};}
       const actor=await transaction.user.findFirst({where:{id:command.actorUserId,organizationId:command.organizationId,active:true},select:{role:true}});if(!actor||!can(actor.role,'sales:write'))return {ok:false as const,reason:'ACTOR_UNAVAILABLE' as const};
+      await assertOpenPostingPeriod(transaction,command.organizationId,command.actorUserId,command.input.occurredAt);
       const sale=await transaction.sale.findFirst({where:{id:command.input.saleId,organizationId:command.organizationId,status:'POSTED'},include:{lines:true}});if(!sale)return {ok:false as const,reason:'SALE_UNAVAILABLE' as const};
       const requestedBySaleLine = new Map<string, Prisma.Decimal>();
       for (const line of command.input.lines) {

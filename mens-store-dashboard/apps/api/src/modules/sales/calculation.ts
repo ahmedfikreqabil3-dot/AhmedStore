@@ -29,7 +29,7 @@ export type CalculateSaleResult =
   | { ok: true; sale: CalculatedSale }
   | { ok: false; reason: 'LINE_DISCOUNT_EXCEEDS_SUBTOTAL' | 'PAYMENT_TOTAL_MISMATCH' };
 
-export function calculateSale(input: CreateSaleInput): CalculateSaleResult {
+export function calculateSaleLines(input: Pick<CreateSaleInput,'lines'>): CalculateSaleResult {
   let subtotal = 0n;
   let discount = 0n;
   const lines = input.lines.map((line) => {
@@ -42,7 +42,11 @@ export function calculateSale(input: CreateSaleInput): CalculateSaleResult {
   });
   if (lines.some((line) => line === null)) return { ok: false, reason: 'LINE_DISCOUNT_EXCEEDS_SUBTOTAL' };
   const total = subtotal - discount;
-  const paid = input.payments.reduce((sum, payment) => sum + parseDecimal(payment.amount), 0n);
-  if (paid !== total) return { ok: false, reason: 'PAYMENT_TOTAL_MISMATCH' };
   return { ok: true, sale: { subtotal: formatDecimal(subtotal), discount: formatDecimal(discount), total: formatDecimal(total), lines: lines as CalculatedSale['lines'] } };
+}
+
+export function calculateSale(input:CreateSaleInput):CalculateSaleResult {
+  const result=calculateSaleLines(input);if(!result.ok)return result;
+  const paid=input.payments.reduce((sum,payment)=>sum+parseDecimal(payment.amount),0n);
+  return paid===parseDecimal(result.sale.total)?result:{ok:false,reason:'PAYMENT_TOTAL_MISMATCH'};
 }

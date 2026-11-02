@@ -1,3 +1,4 @@
+import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { can } from '../identity/authorization.js';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
@@ -11,6 +12,7 @@ export function createPrismaNoInvoiceApprovalRepository(prisma:PrismaClient):NoI
     const actor=await tx.user.findFirst({where:{id:financeUserId,organizationId,active:true},select:{role:true}});if(!actor||!can(actor.role,'returns:approve_no_invoice'))return {ok:false as const,reason:'ACTOR_UNAVAILABLE' as const};
     const pending=await tx.salesReturn.findFirst({where:{id,organizationId,saleId:null,status:{in:['PENDING_APPROVAL','POSTED']}},include:{lines:true,payments:true}});if(!pending)return {ok:false as const,reason:'RETURN_NOT_PENDING' as const};
     if(pending.status==='POSTED')return {ok:true as const,salesReturn:{id:pending.id,total:pending.total.toFixed(4)}};
+    await assertOpenPostingPeriod(tx,organizationId,financeUserId,pending.occurredAt);
     const customer=await tx.customer.findFirst({where:{id:pending.customerId,organizationId,active:true},select:{id:true}});if(!customer)return {ok:false as const,reason:'CUSTOMER_UNAVAILABLE' as const};
     const warehouse=await tx.warehouse.findFirst({where:{id:pending.warehouseId,organizationId,active:true},select:{id:true}});if(!warehouse)return {ok:false as const,reason:'WAREHOUSE_UNAVAILABLE' as const};
     const ids=[...new Set(pending.lines.map(line=>line.productId))];const products=await tx.product.findMany({where:{id:{in:ids},organizationId,active:true},select:{id:true}});if(ids.length===0||products.length!==ids.length)return {ok:false as const,reason:'PRODUCT_UNAVAILABLE' as const};

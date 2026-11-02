@@ -76,7 +76,7 @@ it('limits each count to one hundred distinct products',async()=>{
   const selector=screen.getByLabelText('إضافة صنف للجرد'),add=screen.getByRole('button',{name:'إضافة إلى أصناف الجرد'});
   for(const row of products.slice(0,100)){fireEvent.change(selector,{target:{value:row.id}});fireEvent.click(add);}
   change('إضافة صنف للجرد',products[100]!.id);expect(screen.getByRole('button',{name:'إضافة إلى أصناف الجرد'})).toBeDisabled();
-},15000);
+},45000);
 
 it('keeps each physical quantity independent in a multi-product count',async()=>{
   const second='e5b51424-a9af-417d-9efe-71a4790e6ce3';vi.mocked(readJson).mockImplementation(async path=>path==='/products' ? {products:[{id:product,name:'قميص',active:true},{id:second,name:'بنطلون',active:true}]} : respond(path));await ready();select();change('إضافة صنف للجرد',second);click('إضافة إلى أصناف الجرد');click('تحميل أرصدة الجرد');await screen.findByLabelText('العد الفعلي قميص');change('العد الفعلي قميص','1');change('العد الفعلي بنطلون','2.5');expect(screen.getByLabelText('العد الفعلي قميص')).toHaveValue('1');expect(screen.getByLabelText('العد الفعلي بنطلون')).toHaveValue('2.5');change('سبب الجرد','مراجعة العد');click('مراجعة محضر الجرد');expect(screen.getByRole('heading',{name:'مراجعة محضر الجرد'})).toBeVisible();

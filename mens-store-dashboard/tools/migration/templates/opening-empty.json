@@ -1,0 +1,6 @@
+{
+  "schemaVersion":1,"sourceSystem":"replace-with-source-system","batchKey":"opening-v1","asOf":"2026-11-01T00:00:00.000Z",
+  "organization":{"key":"replace-with-store-key","name":"Replace with store name"},
+  "categories":[],"warehouses":[],"products":[],"customers":[],"suppliers":[],"treasuryAccounts":[],
+  "opening":{"stock":[],"treasury":[],"customers":[],"suppliers":[]}
+}

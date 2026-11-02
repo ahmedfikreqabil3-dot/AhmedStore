@@ -7,7 +7,7 @@ export function statementAmount(value: string) {
   const [integer, fraction] = value.split('.');
   return `${integer!.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`;
 }
-const movementNames: Record<string, string> = { SALE_CREDIT: 'بيع آجل', RETURN_CREDIT: 'تسوية مرتجع', RETURN_REVERSAL: 'عكس تسوية مرتجع', PURCHASE_CREDIT: 'شراء آجل', PURCHASE_RETURN_CREDIT: 'تسوية مرتجع مشتريات', SUPPLIER_PAYMENT: 'سداد مورد', REVERSAL: 'عكس شراء آجل' };
+const movementNames: Record<string, string> = { CUSTOMER_COLLECTION: 'تحصيل من العميل', SALE_CREDIT: 'بيع آجل', RETURN_CREDIT: 'تسوية مرتجع', RETURN_REVERSAL: 'عكس تسوية مرتجع', PURCHASE_CREDIT: 'شراء آجل', PURCHASE_RETURN_CREDIT: 'تسوية مرتجع مشتريات', SUPPLIER_PAYMENT: 'سداد مورد', REVERSAL: 'عكس شراء آجل' };
 export function PartyStatement({kind,party,close}:{kind:Statement['kind'];party:{id:string;name:string};close:()=>void}) {
   const today = new Date().toISOString().slice(0, 10);
   const [from,setFrom]=useState(today.slice(0,8)+'01'),[to,setTo]=useState(today);

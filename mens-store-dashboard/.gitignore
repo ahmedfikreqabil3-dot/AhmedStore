@@ -15,3 +15,8 @@ legacy/database/runtime/
 # Local editor and operating system files
 .DS_Store
 Thumbs.db
+
+.secrets/
+deploy/backups/
+
+deploy/production.env

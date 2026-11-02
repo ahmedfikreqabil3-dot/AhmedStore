@@ -1,0 +1,13 @@
+import {z} from 'zod';
+import {decimalStringSchema} from './catalogue.js';
+import {purchasePaymentInputSchema} from './purchasing.js';
+const positive=decimalStringSchema.refine(v=>BigInt(v.replace('.',''))>0n);
+export const orderInputSchema=z.object({supplierId:z.string().uuid(),warehouseId:z.string().uuid(),lines:z.array(z.object({productId:z.string().uuid(),quantity:positive,unitCost:decimalStringSchema}).strict()).min(1).max(100)}).strict();
+export const receiptInputSchema=z.object({version:z.number().int().positive(),lines:z.array(z.object({lineId:z.string().uuid(),quantity:positive}).strict()).min(1).max(100),payments:z.array(purchasePaymentInputSchema).min(1).max(10)}).strict();
+export const orderVersionSchema=z.object({version:z.number().int().positive()}).strict();
+export const purchaseOrderSchema=orderInputSchema.extend({id:z.string().uuid(),status:z.enum(['OPEN','PARTIAL','RECEIVED','CANCELLED']),version:z.number(),supplierName:z.string(),warehouseName:z.string(),total:z.string(),lines:z.array(z.object({id:z.string().uuid(),productId:z.string().uuid(),productName:z.string(),sku:z.string(),quantity:z.string(),unitCost:z.string(),received:z.string()})),receipts:z.array(z.object({id:z.string().uuid(),purchaseId:z.string().uuid(),total:z.string(),createdAt:z.coerce.date()})),createdAt:z.coerce.date()}).strip();
+export const orderPageSchema=z.object({items:z.array(purchaseOrderSchema),total:z.number(),offset:z.number(),limit:z.number()});
+export const receiptCommandSchema=z.object({orderId:z.string().uuid(),input:receiptInputSchema}).strict();
+export type PurchaseOrder=z.infer<typeof purchaseOrderSchema>;
+export type OrderInput=z.infer<typeof orderInputSchema>;
+export type ReceiptInput=z.infer<typeof receiptInputSchema>;

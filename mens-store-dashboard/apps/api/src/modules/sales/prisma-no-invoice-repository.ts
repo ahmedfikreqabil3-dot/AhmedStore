@@ -1,3 +1,4 @@
+import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { can } from '../identity/authorization.js';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
@@ -11,6 +12,7 @@ export function createPrismaNoInvoiceReturnRepository(prisma:PrismaClient):NoInv
   async createPending(command){return retryWriteConflict(()=>prisma.$transaction(async tx=>{
     const existing=await tx.salesReturn.findUnique({where:{organizationId_idempotencyKey:{organizationId:command.organizationId,idempotencyKey:command.idempotencyKey}}});
     if(existing){if(existing.saleId!==null)return {ok:false as const,reason:'IDEMPOTENCY_KEY_CONFLICT' as const};return {ok:true as const,salesReturn:plain(existing),replayed:true};}
+    await assertOpenPostingPeriod(tx,command.organizationId,command.actorUserId,command.input.occurredAt);
     const customer=await tx.customer.findFirst({where:{id:command.input.customerId,organizationId:command.organizationId,active:true},select:{id:true}});if(!customer)return {ok:false as const,reason:'CUSTOMER_UNAVAILABLE' as const};
     const warehouse=await tx.warehouse.findFirst({where:{id:command.input.warehouseId,organizationId:command.organizationId,active:true},select:{id:true}});if(!warehouse)return {ok:false as const,reason:'WAREHOUSE_UNAVAILABLE' as const};
     const ids=[...new Set(command.input.lines.map(line=>line.productId))];const products=await tx.product.findMany({where:{id:{in:ids},organizationId:command.organizationId,active:true},select:{id:true}});if(products.length!==ids.length)return {ok:false as const,reason:'PRODUCT_UNAVAILABLE' as const};

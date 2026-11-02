@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from 'vitest';
 import type { CreateSaleInput } from '@ahmed-store/contracts';
 import { createSalesService } from '../../src/modules/sales/service.js';
 import { createPrismaSalesRepository } from '../../src/modules/sales/prisma-repository.js';
+import { createPrismaShiftRepository } from '../../src/modules/finance/prisma-shift-repository.js';
 if(!/(?:^|_)tests?$/.test(new URL(process.env.DATABASE_URL!).pathname.slice(1)))throw Error('Separate test database required');
 const prisma=new PrismaClient();const repository=createPrismaSalesRepository(prisma);const service=createSalesService(repository);
 let organizations:string[]=[];let organizationId:string;let otherId:string;let actorId:string;let customerId:string;let warehouseId:string;let productId:string;
@@ -20,11 +21,39 @@ afterEach(async()=>{
   await prisma.customerLedgerEntry.deleteMany({where});
   await prisma.auditEvent.deleteMany({where});await prisma.treasuryTransaction.deleteMany({where});await prisma.inventoryTransaction.deleteMany({where});
   await prisma.salePayment.deleteMany({where:{sale:where}});await prisma.saleLine.deleteMany({where:{sale:where}});await prisma.sale.deleteMany({where});
-  await prisma.product.deleteMany({where});await prisma.customer.deleteMany({where});await prisma.warehouse.deleteMany({where});await prisma.user.deleteMany({where});
+  await prisma.product.deleteMany({where});await prisma.customer.deleteMany({where});await prisma.warehouse.deleteMany({where});await prisma.shift.deleteMany({where});await prisma.user.deleteMany({where});
 });
 afterAll(async()=>{await prisma.organization.deleteMany({where:{id:{in:organizations}}});await prisma.$disconnect();});
 function input():CreateSaleInput{return {customerId,warehouseId,occurredAt:day('20'),lines:[{productId,quantity:'1',unitPrice:'19.9500',discount:'0'}],payments:[{method:'CASH',amount:'19.9500'}]};}
 async function stock(quantity:string,occurredAt=day('01')){await prisma.inventoryTransaction.create({data:{organizationId,warehouseId,productId,type:'OPENING_BALANCE',quantity,referenceType:'TestFixture',referenceId:randomUUID(),occurredAt}});}
+
+it('blocks sales in the owner closed period while retaining original-key replay and current-date correction',async()=>{
+  await stock('10');const key=randomUUID();expect(await service.post(organizationId,actorId,key,input())).toMatchObject({ok:true});
+  await prisma.shift.create({data:{organizationId,userId:actorId,status:'CLOSED',openedAt:day('19'),closedAt:day('21'),closedByUserId:actorId,expectedCash:'19.9500',countedCash:'19.9500',cashDifference:'0'}});
+  expect(await service.post(organizationId,actorId,key,input())).toMatchObject({ok:true,replayed:true});
+  await expect(service.post(organizationId,actorId,randomUUID(),input())).rejects.toMatchObject({reason:'CLOSED_SHIFT'});
+  expect(await prisma.sale.count({where:{organizationId}})).toBe(1);
+  expect(await service.post(organizationId,actorId,randomUUID(),{...input(),occurredAt:day('21')})).toMatchObject({ok:true});
+});
+
+it('prevents a concurrent sale from leaving a closed shift with stale cash totals',async()=>{
+  await stock('10');const shift=await prisma.shift.create({data:{organizationId,userId:actorId,openedAt:day('19')}});
+  let captured!:()=>void,release!:()=>void;const ready=new Promise<void>(done=>{captured=done;}),gate=new Promise<void>(done=>{release=done;});let paused=false;
+  const client=new Proxy(prisma,{get(target,key){
+    if(key==='$transaction')return (work:(tx:unknown)=>Promise<unknown>,options:unknown)=>target.$transaction(tx=>work(new Proxy(tx,{get(transaction,property){
+      if(property==='treasuryTransaction')return new Proxy(transaction.treasuryTransaction,{get(treasury,method){
+        if(method==='findMany')return async(args:Parameters<typeof treasury.findMany>[0])=>{const result=await treasury.findMany(args);if(!paused){paused=true;captured();await gate;}return result;};
+        return Reflect.get(treasury,method);
+      }});return Reflect.get(transaction,property);
+    }})),options as never);
+    return Reflect.get(target,key);
+  }});
+  const closing=createPrismaShiftRepository(client).close(organizationId,shift.id,actorId,day('21'),{expectedCash:'0.0000',countedCash:'0.0000',cashDifference:'0.0000',discrepancyReason:null});
+  const outcome=expect(closing).rejects.toMatchObject({reason:'SHIFT_TOTALS_CHANGED'});
+  await ready;
+  try{expect(await service.post(organizationId,actorId,randomUUID(),input())).toMatchObject({ok:true});}finally{release();}
+  await outcome;expect((await prisma.shift.findUniqueOrThrow({where:{id:shift.id}})).status).toBe('OPEN');
+},30000);
 
 it('treats zero credit limit as unlimited and writes one exact customer debt movement per sale',async()=>{
   await stock('5');

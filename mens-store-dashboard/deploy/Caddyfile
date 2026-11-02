@@ -1,0 +1,26 @@
+{
+ email {$TLS_EMAIL}
+}
+{$APP_DOMAIN} {
+ encode zstd gzip
+ header {
+  ?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  ?X-Content-Type-Options nosniff
+  ?X-Frame-Options DENY
+  ?Referrer-Policy no-referrer
+  ?Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  ?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; upgrade-insecure-requests"
+ }
+ handle /api/v1/metrics {
+  respond 404
+ }
+ handle /api/* {
+  reverse_proxy api:3000
+ }
+ handle {
+  root * /srv
+  try_files {path} /index.html
+  header Cache-Control no-cache
+  file_server
+ }
+}

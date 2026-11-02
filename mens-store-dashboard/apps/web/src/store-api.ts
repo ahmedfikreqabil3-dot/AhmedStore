@@ -38,6 +38,7 @@ export async function postSale(input: CreateSaleInput, key: string): Promise<{ i
   return readJson('/sales', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(input) });
 }
 const saleRejections = new Map([
+  ['CLOSED_SHIFT', 'التاريخ يقع داخل وردية مغلقة. سجّل مستندًا جديدًا بتاريخ حالي للتصحيح.'],
   ['CREDIT_LIMIT_EXCEEDED', 'المبلغ الآجل يتجاوز حد ائتمان العميل بعد إضافة رصيده المستحق. قلّل الآجل أو اختر طريقة سداد أخرى.'],
   ['INSUFFICIENT_STOCK', 'الكمية المطلوبة غير متاحة في الفرع المحدد. اختر فرعًا به رصيد أو قلّل الكمية ثم أعد المحاولة.'],
   ['CUSTOMER_UNAVAILABLE', 'العميل المحدد غير متاح أو غير نشط. اختر عميلًا آخر ثم أعد المحاولة.'],

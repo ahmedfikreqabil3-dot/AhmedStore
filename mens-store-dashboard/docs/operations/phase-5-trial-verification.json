@@ -1,0 +1,129 @@
+{
+  "ownerDecision": "Phase 3/4 core UI/workflows approved; prior advanced scope and hardware printer verification deferred post-launch.",
+  "regression": {
+    "api": {
+      "files": 66,
+      "tests": 329,
+      "failed": 0
+    },
+    "web": {
+      "files": 34,
+      "tests": 355,
+      "failed": 0
+    },
+    "contracts": {
+      "files": 19,
+      "tests": 35,
+      "failed": 0
+    },
+    "legacy": "Business transaction tests passed",
+    "totalVitestTests": 719
+  },
+  "verifiedAt": "2026-11-02T11:07:17.263Z",
+  "sourceBackup": "ahmed_store_core_step3_20261102092948",
+  "sourceBackupManifestVerified": true,
+  "baselineDatabase": "ahmed_store_phase5_baseline_20261102110609_e36fee",
+  "trialDatabase": "ahmed_store_phase5_trial_20261102110609_e36fee",
+  "sourceBusinessTablesVerified": 39,
+  "rollbackTablesVerified": 41,
+  "migrationTests": 7,
+  "dryRunRolledBack": true,
+  "idempotentReplayVerified": true,
+  "databaseRollbackVerified": true,
+  "demoBusinessTablesUnchanged": 39,
+  "demoWrites": 0,
+  "realDataCutover": false,
+  "reconciliation": {
+    "organizationId": "42ced44b-868c-5fa1-b2dc-47a43ee2f1bf",
+    "sourceHash": "d406c85963a9f495cd257587592effd4579b21341a332c0fcd6bdbc52ce15517",
+    "masterCounts": {
+      "categories": 1,
+      "warehouses": 2,
+      "products": 2,
+      "customers": 2,
+      "suppliers": 2,
+      "treasuryAccounts": 2
+    },
+    "stock": {
+      "matched": true,
+      "balances": [
+        {
+          "key": "90e5377c-304b-5468-9a0a-191ae1d5dd4b:fafd57c2-8f60-556c-a210-f0a866793108",
+          "amount": "10.2500"
+        },
+        {
+          "key": "df29d7cb-30c3-58c5-97f0-6ee1e7b1db3b:fafd57c2-8f60-556c-a210-f0a866793108",
+          "amount": "2.0000"
+        },
+        {
+          "key": "90e5377c-304b-5468-9a0a-191ae1d5dd4b:7c28a816-6ecf-59ba-ba94-052728707fb1",
+          "amount": "3.0000"
+        }
+      ]
+    },
+    "treasury": {
+      "matched": true,
+      "balances": [
+        {
+          "key": "51547391-a895-5fc1-8041-15f6b487a8c8",
+          "amount": "1000.1234"
+        },
+        {
+          "key": "5b2f8613-0ff0-5d0f-8487-0dcb7891ae63",
+          "amount": "200.0000"
+        }
+      ]
+    },
+    "customers": {
+      "matched": true,
+      "balances": [
+        {
+          "key": "95e9ae12-0872-5c1e-8c54-226b15d4367d",
+          "amount": "150.2500"
+        },
+        {
+          "key": "6f28b9f8-de56-51fd-8243-5c753faed812",
+          "amount": "-20.0000"
+        }
+      ]
+    },
+    "suppliers": {
+      "matched": true,
+      "balances": [
+        {
+          "key": "a4433e36-bedc-559c-983d-05630cd599a1",
+          "amount": "400.5000"
+        },
+        {
+          "key": "02abbcd0-a4da-58ce-869d-e450de104984",
+          "amount": "-30.0000"
+        }
+      ]
+    },
+    "replayed": false,
+    "dryRun": false
+  },
+  "notes": [
+    "Synthetic opening-example bundle used; no real legacy dataset cutover performed.",
+    "Demo schema remains on its existing 30 applied migrations; the new opening-import migration was applied only to isolated copies.",
+    "Percentage uses the owner-approved core scope; not comparable to the prior full-scope estimate."
+  ],
+  "applicationReadModels": {
+    "applicationStockBalances": true,
+    "applicationPartyStatements": true,
+    "applicationTreasuryAccounts": true,
+    "applicationOperationalReports": true,
+    "readOnly": true,
+    "financialWrites": 0
+  },
+  "typechecks": {
+    "api": "passed",
+    "web": "passed",
+    "contracts": "passed",
+    "migrationTools": "passed"
+  },
+  "localHealth": {
+    "api": 200,
+    "web": 200
+  }
+}

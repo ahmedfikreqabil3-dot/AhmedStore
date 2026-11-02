@@ -1,3 +1,9 @@
+vi.mock('./ManagementWorkspace.js',()=>({MasterManagement:()=> <section>إدارة البيانات</section>,SettingsWorkspace:()=> <section>إعدادات فعلية</section>}));
+vi.mock('./PurchaseOrdersWorkspace.js',()=>({PurchaseOrdersWorkspace:({canEdit}:{canEdit:boolean})=><section>{canEdit?'أوامر شراء فعلية':'أوامر للعرض'}</section>}));
+vi.mock('./SaleDraftsWorkspace.js',()=>({SaleDraftsWorkspace:({canEdit}:{canEdit:boolean})=><section>{canEdit?'مسودات قابلة للتحويل':'مسودات للعرض'}</section>}));
+vi.mock('./UsersWorkspace.js',()=>({UsersWorkspace:()=> <section>مستخدمون فعليون</section>}));
+vi.mock('./MasterDataWorkspace.js',()=>({MasterDataWorkspace:({kind}:{kind:string})=> <section>{kind==='warehouses'?'فروع فعلية':'فئات فعلية'}</section>}));
+vi.mock('./DashboardWorkspace.js',()=>({DashboardWorkspace:()=> <section>ملخص مالي فعلي</section>}));
 vi.mock('./InventoryTransfers.js',()=>({InventoryTransfers:()=> <section>تحويلات فعلية</section>}));
 vi.mock('./InventoryMovements.js',()=>({InventoryMovements:()=> <section>حركات رصيد فعلية</section>}));
 vi.mock('./StockCounts.js',()=>({StockCounts:()=> <section>جرد فعلي</section>}));
@@ -12,6 +18,9 @@ import { currentUser, signIn, signOut } from './store-api.js';
 import { LivePOS } from './LivePOS.js';
 vi.mock('./store-api.js', () => ({ currentUser: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }));
 vi.mock('./PartyWorkspace.js',()=>({PartyWorkspace:({kind,canEdit=true}:{kind:string;canEdit?:boolean})=><section>{kind==='customers' ? `عملاء ${canEdit ? 'تعديل' : 'عرض'}` : 'موردون'}</section>}));
+vi.mock('./TreasuryWorkspace.js',()=>({TreasuryWorkspace:()=> <section>خزائن وتسويات فعلية</section>}));
+vi.mock('./SalesWorkspace.js',()=>({SalesWorkspace:()=> <section>تاريخ المبيعات</section>}));
+vi.mock('./ReportsWorkspace.js',()=>({ReportsWorkspace:()=> <section>تقارير حية</section>}));
 vi.mock('./LivePOS.js', () => ({ LivePOS: vi.fn(() => <div>نقطة البيع المتصلة</div>) }));
 vi.mock('./CatalogueWorkspace.js', () => ({ CatalogueWorkspace: ({ view }: { view: string }) => <section>{view === 'products' ? 'كتالوج حي' : 'رصيد المخزون'}</section> }));
 vi.mock('./App.js', () => ({
@@ -34,7 +43,7 @@ describe('authenticated operational shell', () => {
   });
   it('restores the server session and separates operations into authorized pages', async () => {
     render(<StoreApp/>); expect(screen.getByRole('status')).toHaveTextContent('جارٍ التحقق'); await screen.findByText('مرحبًا، أحمد محمود');
-    for (const [hash, content] of [['stock-operations','تحويلات فعلية'],['customers','عملاء تعديل'],['suppliers','موردون'],['products', 'كتالوج حي'], ['sales', 'تاريخ المبيعات'], ['purchases', 'محرر مشتريات'], ['inventory', 'رصيد المخزون'], ['finance', 'مراجعة ورديات'], ['returns', 'اعتماد مرتجعات'], ['pos', 'نقطة البيع المتصلة']]) {
+    for (const [hash, content] of [['purchase-orders','أوامر شراء فعلية'],['drafts','مسودات قابلة للتحويل'],['users','مستخدمون فعليون'],['branches','فروع فعلية'],['categories','فئات فعلية'],['treasury','خزائن وتسويات فعلية'],['reports','تقارير حية'],['stock-operations','تحويلات فعلية'],['customers','عملاء تعديل'],['suppliers','موردون'],['products', 'كتالوج حي'], ['sales', 'تاريخ المبيعات'], ['purchases', 'محرر مشتريات'], ['inventory', 'رصيد المخزون'], ['finance', 'مراجعة ورديات'], ['returns', 'اعتماد مرتجعات'], ['pos', 'نقطة البيع المتصلة']]) {
       await route(hash); expect(screen.getByText(content)).toBeVisible();
     }
     fireEvent.click(screen.getByRole('link', { name: 'انتقل لمساحة العمل' })); expect(document.activeElement).toHaveAttribute('id', 'workspace');
@@ -44,10 +53,14 @@ describe('authenticated operational shell', () => {
   it.each(['CASHIER', 'MANAGER', 'WAREHOUSE', 'FINANCE'] as const)('reflects %s permissions and rejects an unauthorized URL', async (role) => {
     vi.mocked(currentUser).mockResolvedValue({ ...user, role }); render(<StoreApp/>); await screen.findByText('مرحبًا، أحمد محمود');
     const nav = screen.getByRole('navigation', { name: 'التنقل الرئيسي' });
+    expect(nav.querySelector('a[href="#users"]')).toBeNull();await route('users');expect(screen.queryByText('مستخدمون فعليون')).not.toBeInTheDocument();
+    expect(nav.querySelector('a[href="#branches"]')!==null).toBe(['MANAGER','WAREHOUSE'].includes(role));
+    expect(nav.querySelector('a[href="#categories"]')!==null).toBe(['MANAGER','WAREHOUSE'].includes(role));
+    expect(screen.queryByText('ملخص مالي فعلي')!==null).toBe(['MANAGER','FINANCE'].includes(role));
     if (role === 'CASHIER') { await route('customers');expect(screen.getByText('عملاء عرض')).toBeVisible(); expect(nav).not.toHaveTextContent('المنتجات'); await route('finance'); expect(screen.getByText('الوردية الحالية')).toBeVisible(); expect(screen.queryByText('مراجعة ورديات')).not.toBeInTheDocument(); await route('products'); expect(screen.getByText('مرحبًا، أحمد محمود')).toBeVisible(); }
     if (role === 'MANAGER') { await route('returns'); expect(screen.getByText('إنشاء مرتجع')).toBeVisible(); expect(screen.queryByText('اعتماد مرتجعات')).not.toBeInTheDocument(); }
-    if (role === 'WAREHOUSE') { expect(nav).not.toHaveTextContent('نقطة البيع'); await route('pos'); expect(screen.getByText('مرحبًا، أحمد محمود')).toBeVisible(); }
-    if (role === 'FINANCE') { await route('returns'); expect(screen.getByText('اعتماد مرتجعات')).toBeVisible(); expect(screen.queryByText('إنشاء مرتجع')).not.toBeInTheDocument(); }
+    if (role === 'WAREHOUSE') { expect(nav).not.toHaveTextContent('نقطة البيع'); await route('branches');expect(screen.getByText('فروع فعلية')).toBeVisible();await route('categories');expect(screen.getByText('فئات فعلية')).toBeVisible();await route('pos'); expect(screen.getByText('مرحبًا، أحمد محمود')).toBeVisible(); }
+    if (role === 'FINANCE') { await route('purchase-orders');expect(screen.getByText('أوامر للعرض')).toBeVisible(); await route('drafts');expect(screen.getByText('مسودات للعرض')).toBeVisible(); await route('returns'); expect(screen.getByText('اعتماد مرتجعات')).toBeVisible(); expect(screen.queryByText('إنشاء مرتجع')).not.toBeInTheDocument(); }
   });
   it('does not mount protected operations before login and uses the authenticated identity after login', async () => {
     vi.mocked(currentUser).mockResolvedValue(null); render(<StoreApp/>); await screen.findByRole('heading', { name: 'سجّل دخولك' }); expect(LivePOS).not.toHaveBeenCalled();

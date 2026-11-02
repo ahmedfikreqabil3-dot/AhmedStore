@@ -8,6 +8,9 @@ datasource db {
 }
 
 model Organization {
+  userBranches UserBranch[]
+  settings Json @default("{}")
+  settingsVersion Int @default(1)
   id        String   @id @default(uuid())
   name      String
   createdAt DateTime @default(now())
@@ -34,6 +37,12 @@ model Organization {
   stockThresholds StockThreshold[]
   customerLedgerEntries CustomerLedgerEntry[]
   dataImports DataImport[]
+  treasuryAccounts TreasuryAccount[]
+  treasuryTransfers TreasuryTransfer[]
+  partySettlements PartySettlement[]
+  saleDrafts SaleDraft[]
+  purchaseOrders PurchaseOrder[]
+  orderReceipts OrderReceipt[]
 }
 
 enum Role {
@@ -83,6 +92,11 @@ enum TreasuryTransactionType {
   PURCHASE_PAYMENT
   PURCHASE_PAYMENT_REVERSAL
   PURCHASE_RETURN_REFUND
+  CUSTOMER_COLLECTION
+  SUPPLIER_SETTLEMENT
+  ACCOUNT_TRANSFER_IN
+  ACCOUNT_TRANSFER_OUT
+  ACCOUNT_OPENING
 }
 
 enum PurchaseStatus {
@@ -104,6 +118,8 @@ enum ShiftStatus {
 }
 
 model User {
+  allWarehouses Boolean @default(true)
+  branchPermissions UserBranch[]
   id             String       @id @default(uuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -124,6 +140,8 @@ model User {
   @@index([organizationId, role])
   ownedShifts Shift[] @relation("ShiftOwner")
   dataImports DataImport[] @relation("ImportActor")
+  saleDrafts SaleDraft[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model DataImport {
@@ -219,6 +237,7 @@ model Product {
 }
 
 model Warehouse {
+  userPermissions UserBranch[]
   id             String   @id @default(uuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -239,6 +258,8 @@ model Warehouse {
   @@index([organizationId, active])
   stockCounts StockCount[]
   stockThresholds StockThreshold[]
+  saleDrafts SaleDraft[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Customer {
@@ -264,6 +285,8 @@ model Customer {
   @@unique([organizationId, id], map: "Customer_org_id_key")
   @@index([organizationId, active, name])
   @@index([organizationId, phone])
+  settlements PartySettlement[]
+  saleDrafts SaleDraft[]
 }
 
 // Signed immutable customer debt movements: positive increases the receivable.
@@ -304,6 +327,9 @@ model Supplier {
 
   @@unique([organizationId, name])
   @@index([organizationId, active, name])
+  settlements PartySettlement[]
+  @@unique([organizationId, id], map: "Supplier_org_id_key")
+  purchaseOrders PurchaseOrder[]
 }
 
 model Sale {
@@ -330,6 +356,9 @@ model Sale {
   @@index([organizationId, occurredAt])
   @@index([organizationId, customerId, occurredAt])
   @@index([organizationId, warehouseId, occurredAt])
+  settlementAllocations SettlementAllocation[]
+  @@unique([organizationId, id], map: "Sale_org_id_key")
+  originDraft SaleDraft?
 }
 
 model Purchase {
@@ -358,6 +387,9 @@ model Purchase {
   @@index([organizationId, supplierId, occurredAt])
   @@index([organizationId, warehouseId, occurredAt])
   @@index([organizationId, replacesPurchaseId])
+  settlementAllocations SettlementAllocation[]
+  @@unique([organizationId, id], map: "Purchase_org_id_key")
+  orderReceipt OrderReceipt?
 }
 
 model PurchaseLine {
@@ -564,6 +596,9 @@ model TreasuryTransaction {
 
   @@index([organizationId, occurredAt, paymentMethod])
   @@index([organizationId, sourceType, sourceId])
+  accountId String?
+  account TreasuryAccount? @relation(fields: [organizationId, accountId], references: [organizationId, id], onDelete: Restrict)
+  @@index([organizationId, accountId, occurredAt, id])
 }
 
 model Expense {
@@ -705,4 +740,176 @@ model StockThreshold {
   updatedAt DateTime @default(now()) @updatedAt
   @@unique([organizationId,warehouseId,productId])
   @@index([organizationId,productId])
+}
+
+model TreasuryAccount {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name String
+  paymentMethod PaymentMethod
+  isDefault Boolean @default(false)
+  active Boolean @default(true)
+  version Int @default(1)
+  createKey String?
+  commandHash String? @db.Char(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  entries TreasuryTransaction[]
+  outgoingTransfers TreasuryTransfer[] @relation("TransferSource")
+  incomingTransfers TreasuryTransfer[] @relation("TransferDestination")
+  settlements PartySettlement[]
+  @@unique([organizationId, id], map: "TreasuryAccount_org_id_key")
+  @@unique([organizationId, name])
+  @@unique([organizationId, createKey])
+  @@index([organizationId, active])
+}
+
+model TreasuryTransfer {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fromAccountId String
+  fromAccount TreasuryAccount @relation("TransferSource", fields: [organizationId, fromAccountId], references: [organizationId, id], onDelete: Restrict)
+  toAccountId String
+  toAccount TreasuryAccount @relation("TransferDestination", fields: [organizationId, toAccountId], references: [organizationId, id], onDelete: Restrict)
+  amount Decimal @db.Decimal(19, 4)
+  reason String
+  actorUserId String
+  idempotencyKey String
+  commandHash String @db.Char(64)
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, occurredAt])
+}
+
+model PartySettlement {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  kind String
+  customerId String?
+  customer Customer? @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+  supplierId String?
+  supplier Supplier? @relation(fields: [organizationId, supplierId], references: [organizationId, id], onDelete: Restrict)
+  accountId String
+  account TreasuryAccount @relation(fields: [organizationId, accountId], references: [organizationId, id], onDelete: Restrict)
+  amount Decimal @db.Decimal(19, 4)
+  reason String
+  actorUserId String
+  idempotencyKey String
+  commandHash String @db.Char(64)
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  allocations SettlementAllocation[]
+  @@unique([organizationId, id], map: "PartySettlement_org_id_key")
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, kind, occurredAt])
+}
+
+model SettlementAllocation {
+  id String @id @default(uuid())
+  organizationId String
+  settlementId String
+  settlement PartySettlement @relation(fields: [organizationId, settlementId], references: [organizationId, id], onDelete: Restrict)
+  saleId String?
+  sale Sale? @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Restrict)
+  purchaseId String?
+  purchase Purchase? @relation(fields: [organizationId, purchaseId], references: [organizationId, id], onDelete: Restrict)
+  amount Decimal @db.Decimal(19, 4)
+  @@unique([settlementId, saleId])
+  @@unique([settlementId, purchaseId])
+  @@index([organizationId, saleId])
+  @@index([organizationId, purchaseId])
+}
+
+model SaleDraft {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  actorUserId String
+  actor User @relation(fields:[organizationId,actorUserId],references:[organizationId,id],onDelete:Restrict)
+  customerId String
+  customer Customer @relation(fields:[organizationId,customerId],references:[organizationId,id],onDelete:Restrict)
+  warehouseId String
+  warehouse Warehouse @relation(fields:[organizationId,warehouseId],references:[organizationId,id],onDelete:Restrict)
+  kind String
+  status String @default("OPEN")
+  version Int @default(1)
+  customerName String
+  warehouseName String
+  lines Json
+  subtotal Decimal @db.Decimal(19,4)
+  discount Decimal @db.Decimal(19,4)
+  total Decimal @db.Decimal(19,4)
+  saleId String? @unique
+  sale Sale? @relation(fields:[organizationId,saleId],references:[organizationId,id],onDelete:Restrict)
+  idempotencyKey String
+  requestHash String
+  conversionKey String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([organizationId,idempotencyKey])
+  @@unique([organizationId,saleId])
+  @@index([organizationId,kind,status,createdAt])
+  @@index([organizationId,actorUserId,createdAt])
+  @@index([organizationId,customerId])
+  @@index([organizationId,warehouseId])
+}
+
+model PurchaseOrder {
+ id String @id @default(uuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+ actorUserId String
+ actor User @relation(fields:[organizationId,actorUserId],references:[organizationId,id],onDelete:Restrict)
+ supplierId String
+ supplier Supplier @relation(fields:[organizationId,supplierId],references:[organizationId,id],onDelete:Restrict)
+ warehouseId String
+ warehouse Warehouse @relation(fields:[organizationId,warehouseId],references:[organizationId,id],onDelete:Restrict)
+ supplierName String
+ warehouseName String
+ lines Json
+ total Decimal @db.Decimal(19,4)
+ status String @default("OPEN")
+ version Int @default(1)
+ idempotencyKey String
+ requestHash String
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ receipts OrderReceipt[]
+ @@unique([organizationId,id])
+ @@unique([organizationId,idempotencyKey])
+ @@index([organizationId,warehouseId,status,createdAt])
+ @@index([organizationId,actorUserId])
+ @@index([organizationId,supplierId])
+}
+model OrderReceipt {
+ id String @id @default(uuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+ orderId String
+ order PurchaseOrder @relation(fields:[organizationId,orderId],references:[organizationId,id],onDelete:Restrict)
+ purchaseId String @unique
+ purchase Purchase @relation(fields:[organizationId,purchaseId],references:[organizationId,id],onDelete:Restrict)
+ lines Json
+ total Decimal @db.Decimal(19,4)
+ idempotencyKey String
+ requestHash String
+ createdAt DateTime @default(now())
+ @@unique([organizationId,purchaseId])
+ @@unique([organizationId,idempotencyKey])
+ @@index([organizationId,orderId])
+}
+
+model UserBranch {
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+ userId String
+ user User @relation(fields:[organizationId,userId],references:[organizationId,id],onDelete:Restrict,map:"UserBranch_org_user_fkey")
+ warehouseId String
+ warehouse Warehouse @relation(fields:[organizationId,warehouseId],references:[organizationId,id],onDelete:Restrict,map:"UserBranch_org_warehouse_fkey")
+ @@id([organizationId,userId,warehouseId])
+ @@index([organizationId,warehouseId])
 }

@@ -14,6 +14,7 @@ export function createPrismaPurchaseRevisionRepository(prisma:PrismaClient):Purc
   async revise(command) { return retryWriteConflict(()=>prisma.$transaction(async (transaction) => {
     const existing=await transaction.purchase.findUnique({where:{organizationId_idempotencyKey:{organizationId:command.organizationId,idempotencyKey:command.idempotencyKey}}});if(existing)return {ok:true as const,replayed:true,purchase:{id:existing.id,organizationId:existing.organizationId,supplierId:existing.supplierId,warehouseId:existing.warehouseId,subtotal:existing.subtotal.toFixed(4),total:existing.total.toFixed(4),occurredAt:existing.occurredAt}};
     const original = await transaction.purchase.findFirst({ where: { id: command.original.id, organizationId: command.organizationId, status: 'POSTED' }, include: { lines: true, payments: true, returns: { where: { status: 'POSTED' } } } });
+    if (await transaction.orderReceipt.findFirst({where:{organizationId:command.organizationId,purchaseId:command.original.id},select:{id:true}})) return {ok:false as const,reason:'PURCHASE_NOT_POSTED' as const};
     if (!original) return { ok: false as const, reason: 'PURCHASE_NOT_POSTED' as const };
     if (original.returns.length) return { ok: false as const, reason: 'PURCHASE_HAS_RETURNS' as const };
     const supplier=await transaction.supplier.findFirst({where:{id:command.input.supplierId,organizationId:command.organizationId,active:true},select:{id:true}});if(!supplier)return {ok:false as const,reason:'SUPPLIER_UNAVAILABLE' as const};
