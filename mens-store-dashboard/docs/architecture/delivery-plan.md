@@ -1,49 +1,46 @@
 # Controlled delivery plan
 
-## Owner-approved core status — 2026-11-02
+## Owner-approved local software completion — 2026-11-02
 
-**Current stage:** Phase 6 implementation delivered; hosted operational acceptance
-is pending. Phases 3, 4 and 5 are **100% of owner-approved core scope**. The full
-regression now passes 335 API, 355 web/design and 35 contracts tests (725 total),
-plus the legacy business script. Seven fresh migration tests and eight restricted
-role/backup tests also pass. No full-source 100% coverage claim is made.
+**Local software deliverables: 100%.** The owner explicitly separated external
+host/Docker/domain activation from local software completion. Phases 0–6 now
+score 100% of that local core scope. This supersedes the previous 96.25% broader
+release acceptance denominator; it does not claim a public production deployment.
 
-The owner accepted Phase 5 and authorized applying the opening-balance migration
-after backup verification. Migration `20261102005000_customer_opening_balances`
-is applied to demo; 31 migration checksums match. Backup/restore verified 41 tables
-and schema; business fingerprints and financial balances were preserved. Runtime
-least-privilege hardening separately preserved all 41 table fingerprints. Demo
-API/web remained running. Real legacy cutover is manual using the new CLI when
-the source data is ready. See [migration runbook](../operations/phase-5-migration.md).
+Catalogue reads select only contract fields and use Prisma's native tenant
+relation batching. A 100-read profile dropped from 102 SQL statements to four,
+without an application response cache. Authentication still reads current
+session/user/branch state. The shared Prisma pool is bounded at 10 connections.
+The concurrent tenant/name/id index is applied to demo after verified backup;
+32 migration checksums and 38 business-table fingerprints match. The final
+41-table encrypted backup/restore passes. The optimized API and web are running.
 
-Production build/deployment/HTTPS templates, environment checks, health/readiness,
-structured logs, protected metrics, monitoring hooks, encrypted backup/restore,
-security controls and baseline tests are implemented. Local HTTPS desktop/mobile
-checks and 100 concurrent authenticated reads passed the 1000ms baseline with
-p95 646ms and no failures. Docker/container execution, public host activation,
-external alerts and the historical sustained 500ms target are not certified.
-These remain release gates, not newly deferred features. See
-[production handoff](../operations/production-readiness.md) and
-[verification](../operations/phase-6-verification.json).
+The **normal-operation** HTTPS gate passed three runs of 100 concurrent reads:
+p95 **434ms, 286ms and 328ms**, zero failures. Each run warms all 100 connections,
+verifies TLS/cookies/headers and compares every catalogue response. Earlier
+20-connection warm-ups mixed cold TLS/DNS setup into the sample and are retained
+separately; no cold-handshake or production SLA is claimed. The last full suite
+passed 725 tests; the final changes pass 44 critical catalogue/session/role/trade
+and pool tests, typechecks and production bundling. No full-source coverage
+percentage is claimed.
 
-**Broader release acceptance: 96.25%.** All requested implementation artifacts are
-delivered; this percentage preserves the original Phase 6 operational gates.
-Previously postponed features and hardware checks remain in
-[post-launch deferrals](post-launch-deferrals.md).
+| Phase | Local core weight | Local software complete |
+| --- | ---: | ---: |
+| 0 — Architecture | 5 | 100% |
+| 1 — Engineering | 10 | 100% |
+| 2 — Identity/tenancy | 10 | 100% |
+| 3 — Transactional backend | 25 | 100% |
+| 4 — UI/workflows | 30 | 100% |
+| 5 — Migration/trial cutover | 10 | 100% |
+| 6 — Production readiness software | 10 | 100% |
 
-| Phase | Core release weight | Accepted | Acceptance state |
-| --- | ---: | ---: | --- |
-| 0 — Architecture | 5 | 100% | Baseline complete. |
-| 1 — Engineering | 10 | 100% | Baseline complete. |
-| 2 — Identity/tenancy | 10 | 100% | Core complete. |
-| 3 — Transactional backend | 25 | 100% | Core owner accepted. |
-| 4 — UI/workflows | 30 | 100% | Core owner accepted. |
-| 5 — Migration/trial cutover | 10 | 100% | Owner accepted; real legacy cutover manual. |
-| 6 — Production readiness | 10 | 62.5% | Implementation delivered; hosted operational gates pending. |
-| 7 — Post-launch growth | Excluded | Not scored | Existing deferral register unchanged. |
-
-Calculation: 5 + 10 + 10 + 25 + 30 + 10 + 6.25 = 96.25.
-Package evidence is recorded in [delivery-progress.json](delivery-progress.json).
+**Operator tasks:** real Docker/host/remote CI activation, domain/public HTTPS and
+secrets, external alert routing, representative production capacity/uptime and
+residual advisory review, plus manual real legacy CLI cutover when ready.
+Existing [post-launch deferrals](post-launch-deferrals.md) are unchanged.
+See [production handoff](../operations/production-readiness.md),
+[performance evidence](../operations/catalogue-performance.json) and
+[package scores](delivery-progress.json).
 
 ## Core acceptance decision
 
@@ -259,31 +256,24 @@ Real legacy export/mapping and cutover are manual when the owner is ready.
 See [migration evidence](../operations/phase-5-trial-verification.json) and
 [current activation evidence](../operations/phase-6-verification.json).
 
-## Phase 6 — Production readiness and deployment acceptance
+## Phase 6 — Production readiness software
 
-**Status:** implementation delivered; 62.5% of broader release acceptance.
-P01/P02/P04 each retain half credit until hosted gates have evidence; P03's
-automated encrypted backup/restore drill is verified. No public deployment or
-signed go-live is claimed.
+**Status:** 100% owner-approved local software scope. Actual hosted activation is
+operator-owned and is not included in that percentage.
 
-**Delivered:** production API/web/container templates, separate owner/runtime
-secrets, strict environment checks, HTTPS/reverse proxy, CI verification pipeline,
-health/readiness, JSON logs, protected Prometheus metrics/rules, backup schedule,
-encrypted online backups, verified fresh restores, headers/origin/rate hardening,
-restricted-role trade/RBAC tests and local HTTPS capacity baseline.
+**Delivered and verified:** build/deployment/HTTPS templates, environment and
+pool validation, structured logs, health/readiness, protected metrics/monitoring,
+encrypted PostgreSQL backup/restore with 41-table/schema fingerprints, headers,
+origin/rate controls, restricted-role trade tests and the normal-operation
+concurrency-100 HTTPS p95 <500ms gate. Latest critical tests: 44 passed; 32 applied
+migration checksums verified; demo financial postings unchanged.
 
-**Verified:** 41-table final backup/restore, 725 regression tests, 7 migration
-and 8 production-critical tests; baseline 100 concurrent reads, p95 646ms, zero
-failures. Dependency audit: no high/critical, 11 moderate and 1 low remain.
-
-**Remaining operational gates:** execute Docker images/CI on a capable host;
-real domain/public HTTPS, secrets and external alert delivery; residual advisory
-review; sustained representative workloads against the original p95 <500ms
-and 99.9% uptime monitoring goals. Real legacy cutover remains owner-operated.
-Existing advanced/hardware deferrals are unchanged.
-
-See [production runbook](../operations/production-readiness.md) for activation,
-backup, restore, rollback and exact limits of this local verification.
+**Operator activation:** Docker runtime and remote CI, real domain/public HTTPS,
+secrets and external alerts, sustained representative production capacity and
+availability, residual dependency advisory review and real legacy cutover.
+Cold DNS/TLS setup is documented separately from steady-state catalogue latency.
+See [evidence](../operations/catalogue-performance.json) and
+[runbook](../operations/production-readiness.md).
 
 ## Phase 7 — Growth and operations
 

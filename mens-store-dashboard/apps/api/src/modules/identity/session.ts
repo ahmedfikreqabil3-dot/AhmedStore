@@ -10,7 +10,7 @@ export type StoredSession = {
   tokenHash: string;
   expiresAt: Date;
   revokedAt: Date | null;
-  user: StoredUser;
+  user: Omit<StoredUser, 'passwordHash'>;
 };
 
 export interface SessionRepository {
@@ -36,7 +36,7 @@ export function hashSessionToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function toPublicUser({ passwordHash: _passwordHash, active: _active, ...user }: StoredUser): PublicUser {
+function toPublicUser(user: PublicUser): PublicUser {
   return publicUserSchema.parse(user);
 }
 

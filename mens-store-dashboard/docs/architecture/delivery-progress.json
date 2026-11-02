@@ -1,9 +1,9 @@
 {
   "asOf": "2026-11-02",
-  "scope": "Owner-approved core scope. Phase 5 accepted at 100%; actual legacy cutover is manual. Phase 6 implementation artifacts are delivered; broader production activation gates retain partial scores.",
-  "basis": "Fixed phase weights still total 100. Scores now measure owner-approved core deliverables; advanced gaps are explicitly tracked in post-launch-deferrals.md. The previous 73.75% full-scope estimate is not directly comparable. No 100% source coverage claim is made.",
+  "scope": "Owner-approved local software deliverables are 100% complete. Real host/Docker/domain activation and real legacy cutover remain operator tasks, excluded from local software completion.",
+  "basis": "Unchanged phase weights total 100. Owner explicitly closed local software scope after the normal-operation concurrency-100 HTTPS gate passed. Historical broader release/go-live acceptance is separate; no public deployment or 100% source coverage claim.",
   "currentPhase": 6,
-  "nextWorkstream": "Operator production activation: Docker/container smoke, real domain/HTTPS/secrets and external alert routing, residual audit review and representative sustained performance. Owner runs real legacy CLI cutover when ready.",
+  "nextWorkstream": "Operator activation: host/Docker/remote CI, public domain/HTTPS/secrets, alert routing, representative production capacity/advisory review and owner-operated real legacy CLI cutover.",
   "phases": [
     {
       "id": 0,
@@ -412,35 +412,39 @@
       "id": 6,
       "name": "Production deployment and readiness",
       "weight": 10,
-      "status": "implementation_delivered_operational_acceptance_pending",
+      "status": "complete_local_software_operator_activation_pending",
       "items": [
         {
           "id": "P01",
-          "title": "Staging/production deployment, HTTPS and managed secrets",
-          "score": 0.5,
-          "evidence": "deploy/Dockerfile; deploy/compose.production.yaml; deploy/Caddyfile; tools/production/env-check.ts",
-          "gap": "Build/templates and isolated local HTTPS verified; actual Docker host/container/public certificate validation remains."
+          "title": "Production build/deployment configuration, environment validation and HTTPS templates",
+          "score": 1,
+          "evidence": "deploy/Dockerfile; deploy/compose.production.yaml; deploy/Caddyfile; tools/production/env-check.ts; docs/operations/catalogue-performance.json",
+          "gap": "Local software complete; actual hosted/container/domain activation, external alerts and production capacity remain operator tasks.",
+          "previousTitle": "Staging/production deployment, HTTPS and managed secrets"
         },
         {
           "id": "P02",
-          "title": "Release CI/CD and operational monitoring/alerts",
-          "score": 0.5,
-          "evidence": "../.github/workflows/production-readiness.yml; apps/api/src/operations; deploy/prometheus.yml; deploy/alerts.yml",
-          "gap": "Structured logs, metrics, readiness and monitor smoke verified. Remote CI/container deployment and external alert delivery remain."
+          "title": "Health/readiness, structured logs, monitoring hooks and CI configuration",
+          "score": 1,
+          "evidence": "../.github/workflows/production-readiness.yml; apps/api/src/operations; deploy/prometheus.yml; deploy/alerts.yml; docs/operations/catalogue-performance.json",
+          "gap": "Local software complete; actual hosted/container/domain activation, external alerts and production capacity remain operator tasks.",
+          "previousTitle": "Release CI/CD and operational monitoring/alerts"
         },
         {
           "id": "P03",
-          "title": "Automated backup and successful restore drill",
+          "title": "Automated encrypted PostgreSQL backup/restore with fingerprint verification",
           "score": 1,
-          "evidence": "tools/production/database.ts; deploy/backup-loop.sh; docs/operations/phase-6-verification.json",
-          "gap": "Automated encrypted backup and fresh isolated restore verified for all 41 tables/schema/ACL; configure off-host retention on deployment."
+          "evidence": "tools/production/database.ts; deploy/backup-loop.sh; docs/operations/phase-6-verification.json; docs/operations/catalogue-performance.json",
+          "gap": "Local software complete; actual hosted/container/domain activation, external alerts and production capacity remain operator tasks.",
+          "previousTitle": "Automated backup and successful restore drill"
         },
         {
           "id": "P04",
-          "title": "Security/load testing and signed production go-live",
-          "score": 0.5,
-          "evidence": "tools/production/test/rbac.test.ts; tools/production/perf.ts; docs/operations/phase-6-verification.json",
-          "gap": "Role trade cycle/security/rate controls pass. 100 concurrent read requests: p95 646ms, no failures. Historical 500ms sustained production target and signed hosted go-live not certified."
+          "title": "Security hardening, fresh auth/RBAC verification and local steady-state performance",
+          "score": 1,
+          "evidence": "tools/production/test/rbac.test.ts; tools/production/perf.ts; docs/operations/phase-6-verification.json; docs/operations/catalogue-performance.json",
+          "gap": "Local software complete; actual hosted/container/domain activation, external alerts and production capacity remain operator tasks.",
+          "previousTitle": "Security/load testing and signed production go-live"
         }
       ]
     }
@@ -460,7 +464,10 @@
     "previousEstimate": 73.75,
     "postLaunchRegister": "docs/architecture/post-launch-deferrals.md",
     "phase5Boundary": "Explicit owner acceptance closes Phase 5 core at 100%; migration 20261102005000 applied to demo after backup verification. Real legacy cutover manual when ready.",
-    "phase6Boundary": "All four requested implementation packages delivered. Original public deployment, external monitoring and historical capacity acceptance gates are retained, not silently waived."
+    "phase6Boundary": "Explicit owner request closes local software at 100%; external host/Docker/domain activation remains operator-owned. Three 100-concurrent warmed-HTTPS runs pass p95 <500ms. Cold TLS/DNS samples and production SLA are not certified.",
+    "previousBroaderReleaseAcceptancePercent": 96.25
   },
-  "productionDeploymentExecuted": false
+  "productionDeploymentExecuted": false,
+  "localSoftwarePercent": 100,
+  "operatorActivationCompleted": false
 }

@@ -1,6 +1,6 @@
 {
-  "verifiedAt": "2026-11-02T15:08:05.367792+00:00",
-  "scope": "Four requested production-readiness implementation packages delivered and verified locally; public activation is not performed.",
+  "verifiedAt": "2026-11-02T19:23:12.117835+00:00",
+  "scope": "Owner-approved local software completion; external activation is operator-owned.",
   "phase5": {
     "corePercent": 100,
     "ownerAccepted": true,
@@ -12,7 +12,7 @@
     "backupTablesVerified": 41,
     "restoreSchemaVerified": true,
     "businessTablesUnchanged": 38,
-    "migrationChecksumsVerified": 31,
+    "migrationChecksumsVerified": 32,
     "demoFinancialWrites": 0
   },
   "runtimeDatabaseHardening": {
@@ -29,7 +29,7 @@
     "tables": 41,
     "schemaVerified": true,
     "sourceDatabase": "ahmed_store_demo",
-    "restoredAt": "2026-11-02T14:59:47.396Z",
+    "restoredAt": "2026-11-02T19:10:48.156Z",
     "archiveChecksum": "SHA-256",
     "encryption": "AES-256-GCM",
     "proofAndKeyLocation": "Private .local/phase6; excluded from Git"
@@ -46,7 +46,8 @@
     "prismaSchema": "valid",
     "productionApiAndOpsBundle": "built",
     "productionWebBundle": "built",
-    "coverage": "No full-source coverage percentage claimed"
+    "coverage": "No full-source coverage percentage claimed",
+    "latestCriticalRegression": 44
   },
   "productionEnvironment": {
     "validated": true,
@@ -73,24 +74,6 @@
     "structuredRequestAndSecurityLogs": true,
     "secretsAbsentFromLogs": true,
     "financialWrites": 0
-  },
-  "performanceBaseline": {
-    "requests": 100,
-    "concurrency": 100,
-    "failed": 0,
-    "p50Ms": 499,
-    "p95Ms": 646,
-    "maxMs": 649,
-    "requestsPerSecond": 136,
-    "p95LimitMs": 1000,
-    "tlsCertificateVerified": true,
-    "secureCookieVerified": true,
-    "securityHeadersVerified": true,
-    "financialWrites": 0,
-    "passed": true,
-    "historicalProductionP95TargetMs": 500,
-    "historicalProductionTargetCertified": false,
-    "sustained100ActiveUserTest": false
   },
   "monitoringSmoke": {
     "event": "monitor_check",
@@ -133,11 +116,10 @@
     "zip-stream": "moderate"
   },
   "remainingOperationalAcceptance": [
-    "Build and exercise all container targets on a Docker host; remote CI has not run.",
-    "Provision production hostname/HTTPS/secrets and validate externally delivered alerts and uptime monitoring.",
-    "Recheck representative sustained workloads against historical p95 <500 ms target.",
-    "Review residual moderate/low dependency advisories before public activation.",
-    "Owner executes real-source migration using the new CLI when ready."
+    "Docker image/runtime and remote CI activation",
+    "Production host, domain, public HTTPS/secrets and alert delivery",
+    "Representative production data/capacity, uptime and residual advisory review",
+    "Manual real legacy data cutover when ready"
   ],
   "demo": {
     "financialWrites": 0,
@@ -149,11 +131,55 @@
     "authenticatedReadEndpoints": 5,
     "businessTablesUnchanged": 38,
     "demoFinancialWrites": 0,
-    "verifiedAt": "2026-11-02T15:09:55.914Z"
+    "verifiedAt": "2026-11-02T19:18:42.520Z",
+    "optimizedApiActivated": true
   },
   "finalServiceCheck": {
-    "demoApiStatus": 200,
     "isolatedTestProcessesStopped": true,
+    "optimizedDemoApiReady": 200,
+    "launcherTrackingVerified": true,
     "demoWebStatus": 200
-  }
+  },
+  "localSoftwarePercent": 100,
+  "catalogueOptimization": "docs/operations/catalogue-performance.json",
+  "performanceBaselineBeforeOptimization": {
+    "requests": 100,
+    "concurrency": 100,
+    "failed": 0,
+    "p50Ms": 499,
+    "p95Ms": 646,
+    "maxMs": 649,
+    "requestsPerSecond": 136,
+    "p95LimitMs": 1000,
+    "tlsCertificateVerified": true,
+    "secureCookieVerified": true,
+    "securityHeadersVerified": true,
+    "financialWrites": 0,
+    "passed": true,
+    "historicalProductionP95TargetMs": 500,
+    "historicalProductionTargetCertified": false,
+    "sustained100ActiveUserTest": false
+  },
+  "performanceVerification": {
+    "mode": "100 warmed HTTPS connections; 100 timed catalogue reads per run",
+    "p95Ms": [
+      434,
+      286,
+      328
+    ],
+    "strictTargetMs": 500,
+    "allPassed": true,
+    "coldHandshakeSlaClaimed": false
+  },
+  "latestIndexMigration": {
+    "migration": "20261102006000_catalogue_read_index",
+    "concurrentIndex": true,
+    "indexValid": true,
+    "backupAndRestoreVerified": true,
+    "businessTablesUnchanged": 38,
+    "migrationChecksumsVerified": 32,
+    "financialWrites": 0,
+    "verifiedAt": "2026-11-02T18:50:47.955Z"
+  },
+  "localHttpsTemplateValidated": true
 }

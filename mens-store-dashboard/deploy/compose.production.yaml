@@ -41,6 +41,8 @@ services:
       APP_ORIGIN: https://${APP_DOMAIN:?Set APP_DOMAIN}
       TRUST_PROXY: 172.30.0.0/24
       LOG_LEVEL: info
+      DATABASE_POOL_SIZE: 10
+      DATABASE_POOL_TIMEOUT_SECONDS: 10
       RATE_LIMIT_MAX: 600
       AUTH_RATE_LIMIT_MAX: 10
     secrets: [app_database_url, metrics_token]

@@ -1,0 +1,160 @@
+{
+  "verifiedAt": "2026-11-02T19:23:12.071944+00:00",
+  "scope": "Owner-approved local software completion; external activation is operator-owned.",
+  "localSoftwarePercent": 100,
+  "workload": {
+    "requestsPerRun": 100,
+    "concurrency": 100,
+    "warmupRequests": 100,
+    "transport": "HTTPS HTTP/1.1 with 100 established keep-alive client connections",
+    "catalogueProducts": 5,
+    "applicationResponseCache": false,
+    "tlsCertificateVerification": "Pinned local CA, enabled",
+    "target": "strict p95 <500 ms during normal operation"
+  },
+  "runs": [
+    {
+      "warmupRequests": 100,
+      "requests": 100,
+      "concurrency": 100,
+      "failed": 0,
+      "p50Ms": 320,
+      "p95Ms": 434,
+      "maxMs": 450,
+      "requestsPerSecond": 219,
+      "p95LimitMs": 500,
+      "tlsCertificateVerified": true,
+      "secureCookieVerified": true,
+      "securityHeadersVerified": true,
+      "consistentCatalogueVerified": true,
+      "catalogueProducts": 5,
+      "financialWrites": 0,
+      "passed": true
+    },
+    {
+      "warmupRequests": 100,
+      "requests": 100,
+      "concurrency": 100,
+      "failed": 0,
+      "p50Ms": 222,
+      "p95Ms": 286,
+      "maxMs": 301,
+      "requestsPerSecond": 311,
+      "p95LimitMs": 500,
+      "tlsCertificateVerified": true,
+      "secureCookieVerified": true,
+      "securityHeadersVerified": true,
+      "consistentCatalogueVerified": true,
+      "catalogueProducts": 5,
+      "financialWrites": 0,
+      "passed": true
+    },
+    {
+      "warmupRequests": 100,
+      "requests": 100,
+      "concurrency": 100,
+      "failed": 0,
+      "p50Ms": 243,
+      "p95Ms": 328,
+      "maxMs": 344,
+      "requestsPerSecond": 285,
+      "p95LimitMs": 500,
+      "tlsCertificateVerified": true,
+      "secureCookieVerified": true,
+      "securityHeadersVerified": true,
+      "consistentCatalogueVerified": true,
+      "catalogueProducts": 5,
+      "financialWrites": 0,
+      "passed": true
+    }
+  ],
+  "worstRunP95Ms": 434,
+  "gatePassed": true,
+  "queryProfile": {
+    "initialSingleRequestSqlQueries": 5,
+    "initialConcurrent100AfterProjectionQueries": 102,
+    "optimizedConcurrent100SqlQueries": 4,
+    "optimizedConcurrent100DirectElapsedMs": 143,
+    "mechanism": "Prisma native findUnique relation batching, no persistent application cache"
+  },
+  "pool": {
+    "singleSharedClient": true,
+    "connections": 10,
+    "acquisitionTimeoutSeconds": 10,
+    "maximumConfigurableConnections": 50
+  },
+  "indexMigration": {
+    "migration": "20261102006000_catalogue_read_index",
+    "concurrentIndex": true,
+    "indexValid": true,
+    "backupAndRestoreVerified": true,
+    "businessTablesUnchanged": 38,
+    "migrationChecksumsVerified": 32,
+    "financialWrites": 0,
+    "verifiedAt": "2026-11-02T18:50:47.955Z"
+  },
+  "backupRestore": {
+    "encrypted": true,
+    "tables": 41,
+    "schemaVerified": true,
+    "restoredAt": "2026-11-02T19:10:48.156Z"
+  },
+  "criticalTests": {
+    "catalogueSessionBranchAndPool": 36,
+    "restrictedRoleTradeAndCrypto": 8,
+    "poolSanitizedUrlRecheck": 1,
+    "typescriptApiTools": "passed",
+    "productionBundle": "built"
+  },
+  "security": {
+    "httpsPinnedCaVerified": true,
+    "wrongOriginRejected": true,
+    "unauthenticatedCatalogueRejected": true,
+    "publicMetricsBlocked": true,
+    "internalMetricsTokenEnforced": true,
+    "authRateLimitedWithRetryAfter": true,
+    "structuredRequestAndSecurityLogs": true,
+    "secretsAbsentFromLogs": true,
+    "financialWrites": 0
+  },
+  "demo": {
+    "apiRunning": true,
+    "webRunning": true,
+    "authenticatedReadEndpoints": 5,
+    "businessTablesUnchanged": 38,
+    "demoFinancialWrites": 0,
+    "verifiedAt": "2026-11-02T19:18:42.520Z",
+    "optimizedApiActivated": true,
+    "apiPort": 3000,
+    "apiReady": true,
+    "poolSize": 10,
+    "poolTimeoutSeconds": 10,
+    "databaseRestarted": false,
+    "financialWrites": 0
+  },
+  "coldConnectionObservations": {
+    "warmupRequests": 20,
+    "observedP95Ms": [
+      446,
+      350,
+      646
+    ],
+    "consistentlyUnder500Ms": false,
+    "boundary": "Retained separately; DNS/TLS setup samples are not comparable to the 100-active-connection normal-operation target. No cold-handshake latency SLA is claimed."
+  },
+  "operatorTasks": [
+    "Docker image/runtime and remote CI activation",
+    "Production host, domain, public HTTPS/secrets and alert delivery",
+    "Representative production data/capacity, uptime and residual advisory review",
+    "Manual real legacy data cutover when ready"
+  ],
+  "productionDeploymentExecuted": false,
+  "sourceCoveragePercentClaimed": null,
+  "finalServiceCheck": {
+    "isolatedTestProcessesStopped": true,
+    "optimizedDemoApiReady": 200,
+    "launcherTrackingVerified": true,
+    "demoWebStatus": 200
+  },
+  "localHttpsTemplateValidated": true
+}

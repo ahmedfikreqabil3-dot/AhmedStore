@@ -1,7 +1,7 @@
 # Production readiness and operator activation
 
 Verified locally: 2026-11-02. All four requested implementation packages are delivered.
-This is a readiness handoff, not a public production go-live approval.
+Local software is owner-closed at 100% after the catalogue optimization checkpoint below. Public production activation remains operator-owned.
 
 ## Verified handoff
 
@@ -82,18 +82,58 @@ claim. The high-severity Zod/Prisma-config transitive issues were patched withou
 upgrading Prisma's running engine. Review residual advisories and deployment
 exposure before activating the public host; Vite is never served in production.
 
-The HTTPS baseline issued 100 authenticated catalogue reads at concurrency 100:
+Before optimization, the HTTPS baseline issued 100 authenticated catalogue reads at concurrency 100:
 0 failures, p95 646 ms, maximum 649 ms, 136 requests/sec. The baseline's 1000 ms
 threshold passed; the historical 500 ms / 100-active-user production target is
-not certified by this burst and remains an activation gate. Re-run on the real
+not certified by that earlier burst. The local normal-operation gate now passes as recorded below. Re-run on the real
 host with representative data and sustained user journeys; verify 99.9% uptime
 alerting, externally delivered alerts, container health and restore access.
 
 No Docker runtime, hosted deployment, public certificate, sustained production
 SLA, real legacy cutover or full-source 100% coverage is claimed. Existing
-post-launch feature/hardware deferrals are unchanged. The broader Phase 6 release
-acceptance remains partial until those operational gates have evidence.
+post-launch feature/hardware deferrals are unchanged. The owner excludes external activation tasks from the completed local software scope; those gates still require operator evidence before public go-live.
 
 References: [PostgreSQL snapshot backups](https://www.postgresql.org/docs/17/app-pgdump.html),
 [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https),
 [Prometheus alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/).
+
+## Catalogue optimization checkpoint
+
+The read path now selects only the product contract fields and loads products
+through the tenant's unique organization relation. Prisma's native batching
+coalesces concurrent identical reads without an application cache. A direct
+100-read profile uses four SQL statements instead of 102 after the initial
+projection cleanup. Session/user status and branch permissions remain fresh on
+every request; password hashes are not selected during session authentication.
+`Product_org_name_id_idx` supports tenant/name/id ordering. The concurrent index
+migration is applied to demo after verified encrypted backup and restore.
+
+The API has one shared Prisma client with a bounded default pool of 10 connections
+and a 10-second acquisition timeout. `DATABASE_POOL_SIZE` (1–50) and
+`DATABASE_POOL_TIMEOUT_SECONDS` (1–120) override URL settings; otherwise explicit
+URL settings are preserved. The deployment template sets 10/10 explicitly.
+
+Use `deploy/Caddyfile.local` from the application directory for isolated HTTPS
+(port 3443, upstream 3002); it binds both loopback families and does not install
+its private CA into the OS trust store. Set XDG_DATA_HOME/XDG_CONFIG_HOME to private
+local directories. Pass that CA through PERF_TLS_CA_FILE. Run the production API
+against a restored test copy with APP_ORIGIN=https://localhost:3443 and a restricted
+role, never against financial fixtures on demo.
+
+The benchmark now warms all 100 client connections before timing 100 simultaneous
+catalogue requests. This measures normal operation with established HTTPS
+connections, matching the historical active-user latency target. Every response
+must match the authenticated baseline; TLS verification, secure cookies, headers,
+logging and rate limits remain enabled. The old 20-connection warm-up included
+80 new TLS/DNS setups and is not a directly comparable steady-state sample.
+Those cold-connection runs ranged above 500ms and are retained in verification;
+no cold-start or public-host latency guarantee is made. The default gate is
+strictly p95 <500ms. See `catalogue-performance.json` for final runs and limits.
+
+Final local verification: three warmed-connection HTTPS runs recorded p95
+434/286/328ms, all strictly below 500ms with zero failures. All 44 critical tests,
+API/tools typechecks and production bundle pass; 32 migration checksums verify.
+The optimized demo API is activated on port 3000 with pool 10/10; port 5173 and
+PostgreSQL remain running. Current logs are private `.local/catalogue-api.log`
+and `.local/catalogue-api.error.log`. All local software is owner-closed at 100%;
+public host/Docker/domain/alerts and real legacy activation are operator tasks.

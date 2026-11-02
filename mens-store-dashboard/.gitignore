@@ -4,9 +4,7 @@ node_modules/
 dist/
 coverage/
 .local/
-.env
-.env.*
-!.env.example
+.env*
 prisma/generated/
 
 # Legacy local SQLite database and backups
@@ -20,3 +18,17 @@ Thumbs.db
 deploy/backups/
 
 deploy/production.env
+
+# Private credentials and database backup artifacts
+secrets/
+**/backups/
+*.dump
+*.dump.*
+*.backup
+*.bak
+*.sql.gz
+*.sql.enc
+*.pem
+*.key
+*.p12
+*.pfx

@@ -232,6 +232,7 @@ model Product {
   @@unique([organizationId, id], map: "Product_org_id_key")
   @@index([organizationId, active])
   @@index([organizationId, categoryId])
+  @@index([organizationId, name, id], map: "Product_org_name_id_idx")
   stockCountLines StockCountLine[]
   stockThresholds StockThreshold[]
 }

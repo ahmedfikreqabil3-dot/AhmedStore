@@ -9,4 +9,13 @@ export function runtimeConfig(env:NodeJS.ProcessEnv=process.env):RuntimeConfig{
  const logLevel=get('LOG_LEVEL')??(env.NODE_ENV==='test'?'silent':'info');if(!['fatal','error','warn','info','debug','trace','silent'].includes(logLevel))throw Error('INVALID_LOG_LEVEL');
  return{production,host:get('API_HOST')??'127.0.0.1',port:number('PORT',3000,65535),origin,trustProxy:proxies.length?proxies:false,metricsToken,logLevel,bodyLimit:number('BODY_LIMIT_BYTES',1048576,10485760),rateMax:number('RATE_LIMIT_MAX',env.NODE_ENV==='test'?100000:600,100000),authRateMax:number('AUTH_RATE_LIMIT_MAX',env.NODE_ENV==='test'?100000:10,100000)};
 }
-export function loadRuntime(){if(!process.env.DATABASE_URL&&process.env.DATABASE_URL_FILE)process.env.DATABASE_URL=fs.readFileSync(process.env.DATABASE_URL_FILE,'utf8').trim();return runtimeConfig();}
+export function pooledDatabaseUrl(raw:string,env:NodeJS.ProcessEnv=process.env){
+ let url:URL;try{url=new URL(raw)}catch{throw Error('INVALID_DATABASE_URL')};
+ for(const [parameter,key,fallback,max] of [['connection_limit','DATABASE_POOL_SIZE',10,50],['pool_timeout','DATABASE_POOL_TIMEOUT_SECONDS',10,120]] as const){
+  const value=env[key]??url.searchParams.get(parameter)??String(fallback),n=Number(value);
+  if(!Number.isInteger(n)||n<1||n>max)throw Error('INVALID_'+key);
+  url.searchParams.set(parameter,String(n));
+ }
+ return url.toString();
+}
+export function loadRuntime(){if(!process.env.DATABASE_URL&&process.env.DATABASE_URL_FILE)process.env.DATABASE_URL=fs.readFileSync(process.env.DATABASE_URL_FILE,'utf8').trim();if(process.env.DATABASE_URL)process.env.DATABASE_URL=pooledDatabaseUrl(process.env.DATABASE_URL);return runtimeConfig();}

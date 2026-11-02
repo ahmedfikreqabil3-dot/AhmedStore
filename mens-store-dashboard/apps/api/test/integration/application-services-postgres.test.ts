@@ -168,3 +168,16 @@ it('forwards personal shift ownership through the application composition', asyn
   // The sale above is also owned by this actor and has the same test timestamp.
   expect(await services.shiftService.summary(organizationId, actorId, false, opened.shift.id, end)).toMatchObject({ ok: true, totals: { net: '29.9500' } });
 });
+
+it('keeps batched catalogue reads tenant-scoped and fresh after a committed edit',async()=>{
+  const id=randomUUID(),name='Concurrent catalogue '+randomUUID();
+  await prisma.product.create({data:{id,organizationId,name,sku:'BATCH-'+id,salePrice:'12.34',costPrice:'1.23'}});
+  await prisma.product.create({data:{organizationId:otherId,name,sku:'BATCH-'+id,salePrice:'99',costPrice:'50'}});
+  const tenants=Array.from({length:20},(_,i)=>i%2?organizationId:otherId);
+  const lists=await Promise.all(tenants.map(org=>services.productService.list(org)));
+  lists.forEach((products,i)=>expect(products.every(p=>p.organizationId===tenants[i])).toBe(true));
+  expect(lists[1].find(p=>p.id===id)).toMatchObject({salePrice:'12.3400',costPrice:'1.2300'});
+  expect(lists[1].find(p=>p.id===id)).not.toHaveProperty('createdAt');
+  await prisma.product.update({where:{id},data:{salePrice:'15.67'}});
+  expect((await services.productService.list(organizationId)).find(p=>p.id===id)?.salePrice).toBe('15.6700');
+});

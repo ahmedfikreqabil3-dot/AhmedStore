@@ -79,14 +79,22 @@ const sessionService = createSessionService({
   },
   async createSession(input) { await prisma.session.create({ data: input }); },
   async findSession(tokenHash) {
-    return prisma.session.findUnique({ where: { tokenHash }, include: { user: true } });
+    const session = await unscoped.session.findUnique({ where: { tokenHash }, select: {
+      id: true, tokenHash: true, expiresAt: true, revokedAt: true,
+      user: { select: { id: true, organizationId: true, name: true, email: true, role: true, active: true,
+        allWarehouses: true } }
+    } });
+    if (!session) return null;
+    const warehouseIds = session.user.allWarehouses || session.user.role === 'ADMIN' ? undefined :
+      (await unscoped.userBranch.findMany({ where: { userId: session.user.id, organizationId: session.user.organizationId }, select: { warehouseId: true } })).map(b => b.warehouseId);
+    return { ...session, user: { ...session.user, warehouseIds } };
   },
   async revokeSession(id, revokedAt) { await prisma.session.update({ where: { id }, data: { revokedAt } }); },
   async createAuditEvent(input) { await prisma.auditEvent.create({ data: input }); }
 });
 
-async function scopedAuth(auth:Awaited<ReturnType<typeof sessionService.authenticate>>){if(auth.ok){const u=await unscoped.user.findUniqueOrThrow({where:{id:auth.user.id},include:{branchPermissions:{select:{warehouseId:true}}}});if(!u.allWarehouses&&u.role!=='ADMIN')auth.user.warehouseIds=u.branchPermissions.map(b=>b.warehouseId);}return auth;}
-const authenticationService={...sessionService,branchScopeEnabled:true,async login(input:Parameters<typeof sessionService.login>[0]){return scopedAuth(await sessionService.login(input));},async authenticate(token:string|undefined){const context=branchContext.getStore();if(context?.auth)return context.auth;const auth=await scopedAuth(await sessionService.authenticate(token));if(context){context.auth=auth;if(auth.ok)context.warehouseIds=auth.user.warehouseIds;}return auth;}};
+async function scopedAuth(auth:Awaited<ReturnType<typeof sessionService.authenticate>>){if(auth.ok&&auth.user.role!=='ADMIN'){const u=await unscoped.user.findUniqueOrThrow({where:{id:auth.user.id},select:{allWarehouses:true,branchPermissions:{select:{warehouseId:true}}}});if(!u.allWarehouses)auth.user.warehouseIds=u.branchPermissions.map(b=>b.warehouseId);}return auth;}
+const authenticationService={...sessionService,branchScopeEnabled:true,async login(input:Parameters<typeof sessionService.login>[0]){return scopedAuth(await sessionService.login(input));},async authenticate(token:string|undefined){const context=branchContext.getStore();if(context?.auth)return context.auth;const auth=await sessionService.authenticate(token);if(context){context.auth=auth;if(auth.ok)context.warehouseIds=auth.user.warehouseIds;}return auth;}};
 
 const userDirectoryService = {
   async list(organizationId: string) {
@@ -116,7 +124,12 @@ const categoryImportService = createCategoryImportService({
 
 const productReader = createProductService({
   async list(organizationId) {
-    const products = await prisma.product.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: {
+      products: { orderBy: [{ name: 'asc' }, { id: 'asc' }], select: {
+        id: true, organizationId: true, categoryId: true, name: true, sku: true, barcode: true,
+        salePrice: true, costPrice: true, active: true, version: true } }
+    } });
+    const products = organization?.products ?? [];
     return products.map((product) => ({ ...product, salePrice: product.salePrice.toFixed(4), costPrice: product.costPrice.toFixed(4) }));
   },
   async findBySku(organizationId, sku) {

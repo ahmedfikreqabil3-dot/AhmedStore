@@ -1,0 +1,30 @@
+{
+ admin off
+ skip_install_trust
+ auto_https disable_redirects
+}
+https://localhost:3443 {
+ bind 127.0.0.1 ::1
+ tls internal
+ encode zstd gzip
+ header {
+  ?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  ?X-Content-Type-Options nosniff
+  ?X-Frame-Options DENY
+  ?Referrer-Policy no-referrer
+  ?Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  ?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; upgrade-insecure-requests"
+ }
+ handle /api/v1/metrics {
+  respond 404
+ }
+ handle /api/* {
+  reverse_proxy 127.0.0.1:3002
+ }
+ handle {
+  root * apps/web/dist
+  try_files {path} /index.html
+  header Cache-Control no-cache
+  file_server
+ }
+}
