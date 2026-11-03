@@ -118,3 +118,5 @@
 
 .user-administration label:has(>input[type="checkbox"]),.master-management label:has(>input[type="checkbox"]){display:flex;flex-direction:row;align-items:center;gap:10px;min-height:44px;}
 .user-administration input[type="checkbox"],.master-management input[type="checkbox"]{inline-size:18px;block-size:18px;min-height:18px;max-width:18px;margin:0;flex:none;accent-color:#0f766e;}
+
+.analytics-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-block:16px}.analytics-chart{margin:0;min-width:0}.analytics-chart figcaption{font-weight:700;margin-block-end:8px}.analytics-chart svg{width:100%;height:auto;display:block}.analytics-chart circle:focus-visible{outline:3px solid var(--teal)}@media(max-width:760px){.analytics-charts{grid-template-columns:1fr}}

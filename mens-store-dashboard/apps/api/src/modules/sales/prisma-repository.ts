@@ -1,3 +1,4 @@
+import {checkAccount} from '../finance/account-selection.js';
 import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { minimumStockFrom } from '../inventory/stock-integrity.js';
 import { creditUnits, customerDebt, ledgerUnits, recordCustomerCredit } from '../parties/customer-ledger.js';
@@ -26,6 +27,7 @@ export function createPrismaSalesRepository(prisma:PrismaClient,bound?:Prisma.Tr
       const existing=await transaction.sale.findUnique({where:{organizationId_idempotencyKey:{organizationId:command.organizationId,idempotencyKey:command.idempotencyKey}}});
       if(existing)return {ok:true as const,sale:toPostedSale(existing),replayed:true};
       await assertOpenPostingPeriod(transaction,command.organizationId,command.actorUserId,command.input.occurredAt);
+      for(const payment of command.input.payments)await checkAccount(transaction,command.organizationId,payment.accountId,payment.method);
       const customer=await transaction.customer.findFirst({where:{id:command.input.customerId,organizationId:command.organizationId,active:true},select:{id:true,creditLimit:true}});
       if(!customer)return {ok:false as const,reason:'CUSTOMER_UNAVAILABLE' as const};
       const credit=creditUnits(command.input.payments),limit=ledgerUnits(customer.creditLimit.toFixed(4));
@@ -61,7 +63,7 @@ export function createPrismaSalesRepository(prisma:PrismaClient,bound?:Prisma.Tr
         }
       });
       await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: command.input.warehouseId, productId: line.productId, type: 'SALE_ISSUE', quantity: new Prisma.Decimal(line.quantity).negated(), referenceType: 'Sale', referenceId: sale.id, occurredAt: command.input.occurredAt })) });
-      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'SALE_RECEIPT', paymentMethod: payment.method, amount: payment.amount, sourceType: 'Sale', sourceId: sale.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'SALE_RECEIPT', accountId:payment.accountId, paymentMethod: payment.method, amount: payment.amount, sourceType: 'Sale', sourceId: sale.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
       await recordCustomerCredit(transaction,{organizationId:command.organizationId,customerId:customer.id,actorUserId:command.actorUserId,sourceId:sale.id,occurredAt:command.input.occurredAt,type:'SALE_CREDIT'},command.input.payments);
       await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALE_POSTED', entityType: 'Sale', entityId: sale.id } });
       return { ok: true as const, sale: toPostedSale(sale) };

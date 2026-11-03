@@ -1,6 +1,6 @@
 {
-  "asOf": "2026-11-02",
-  "scope": "Owner-approved local software deliverables are 100% complete. Real host/Docker/domain activation and real legacy cutover remain operator tasks, excluded from local software completion.",
+  "asOf": "2026-11-03",
+  "scope": "Local software deliverables, including all requested post-launch software deferrals, are 100% complete. Physical printer testing, external deployment activation and real legacy cutover remain operator tasks.",
   "basis": "Unchanged phase weights total 100. Owner explicitly closed local software scope after the normal-operation concurrency-100 HTTPS gate passed. Historical broader release/go-live acceptance is separate; no public deployment or 100% source coverage claim.",
   "currentPhase": 6,
   "nextWorkstream": "Operator activation: host/Docker/remote CI, public domain/HTTPS/secrets, alert routing, representative production capacity/advisory review and owner-operated real legacy CLI cutover.",
@@ -469,5 +469,12 @@
   },
   "productionDeploymentExecuted": false,
   "localSoftwarePercent": 100,
-  "operatorActivationCompleted": false
+  "operatorActivationCompleted": false,
+  "postLaunchSoftware": {
+    "status": "complete",
+    "automatedTestsPassed": 759,
+    "verification": "docs/operations/post-launch-software-verification.json",
+    "remainingSoftwareDeferrals": [],
+    "physicalHardwarePrinterTesting": "operator_task"
+  }
 }

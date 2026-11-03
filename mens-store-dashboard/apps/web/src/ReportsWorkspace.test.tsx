@@ -68,3 +68,11 @@ it('retains a historical branch identifier if its name is unavailable',async()=>
   const select=screen.getByLabelText('الفرع');const historical=document.createElement('option');historical.value='old-branch';historical.text='فرع تاريخي';select.append(historical);
   fireEvent.change(select,{target:{value:'old-branch'}});fireEvent.submit(screen.getByRole('form',{name:'فلاتر التقارير'}));await screen.findByText(/old-branch/);
 });
+
+it('applies advanced filters identically to screen reads and Excel exports',async()=>{
+ vi.mocked(readJson).mockImplementation(async path=>path==='/reports/options'?{customers:[{id,name:'Filter customer'}],suppliers:[],products:[],categories:[],accounts:[]}:path==='/warehouses'?{warehouses:[]}:report);
+ render(<ReportsWorkspace/>);await screen.findByText('110.1233');const details=screen.getByText('فلاتر التقرير المتقدمة').closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));await screen.findByRole('option',{name:'Filter customer'});
+ fireEvent.change(screen.getByLabelText('العميل'),{target:{value:id}});fireEvent.change(screen.getByLabelText('مرجع أو وصف'),{target:{value:'Needle'}});fireEvent.change(screen.getByLabelText('الحد الأدنى'),{target:{value:'1.0001'}});fireEvent.change(screen.getByLabelText('طريقة سداد التقرير'),{target:{value:'CREDIT'}});fireEvent.submit(screen.getByRole('form',{name:'فلاتر التقارير'}));
+ await waitFor(()=>{const calls=vi.mocked(readJson).mock.calls.filter(([p])=>p.startsWith('/reports/operations?'));expect(calls.at(-1)![0]).toContain('customerId='+id);});
+ const fetcher=vi.fn(async(_url:string,_options?:RequestInit)=>({ok:true,blob:async()=>new Blob(['report'])}));vi.stubGlobal('fetch',fetcher);vi.stubGlobal('URL',{createObjectURL:vi.fn(()=> 'blob:report'),revokeObjectURL:vi.fn()});vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>{});fireEvent.click(screen.getByRole('button',{name:'تصدير Excel لكل النتائج'}));await waitFor(()=>expect(fetcher).toHaveBeenCalled());const query=new URLSearchParams((fetcher.mock.calls[0]![0] as string).split('?')[1]);expect(query.get('customerId')).toBe(id);expect(query.get('search')).toBe('Needle');expect(query.get('minAmount')).toBe('1.0001');expect(query.get('paymentMethod')).toBe('CREDIT');
+});

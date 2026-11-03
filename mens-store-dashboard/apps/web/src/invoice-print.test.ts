@@ -1,3 +1,4 @@
+vi.mock('./print-settings.js',()=>({loadPrintSettings:vi.fn(async()=>({name:'Test shop',phone:'123',address:'Test street',receiptHeader:'<b>Header</b>',receiptFooter:'Custom footer'}))}));
 import {afterEach,expect,it,vi} from 'vitest';
 import {invoiceFixture} from './sale-document.fixture.js';
 import {printSaleDocument} from './invoice-print.js';

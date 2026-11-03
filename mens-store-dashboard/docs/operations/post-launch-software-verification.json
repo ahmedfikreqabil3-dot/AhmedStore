@@ -1,0 +1,89 @@
+{
+  "verifiedAt": "2026-11-03T07:30:16.863739+00:00",
+  "softwareScope": "All requested post-launch software deferrals complete",
+  "automatedTests": {
+    "application": 714,
+    "contracts": 35,
+    "productionRoleAndBackup": 8,
+    "migrationTooling": 2,
+    "totalPassed": 759,
+    "failed": 0,
+    "skipped": 0,
+    "legacyBusinessTests": "passed"
+  },
+  "sourceCoverage": {
+    "api": {
+      "lines": 99.56,
+      "statements": 99.56,
+      "functions": 98.46,
+      "branches": 98.91
+    },
+    "web": {
+      "lines": 100,
+      "statements": 100,
+      "functions": 96.62,
+      "branches": 97.9
+    }
+  },
+  "regressionCorrections": [
+    "Bounded retry only for a transaction rejected before it starts; expired or uncertain transactions are never retried.",
+    "POS exit and invoice focus assertions await their asynchronous UI effects.",
+    "Print settings project only public fields and tolerate unrelated legacy JSON settings.",
+    "Report reads use a bounded ten-second transaction-start wait and fifteen-second transaction timeout to tolerate cold pool startup."
+  ],
+  "builds": {
+    "api": "passed",
+    "web": "passed",
+    "apiWebAndToolsTypechecks": "passed",
+    "newDependencies": 0
+  },
+  "browser": {
+    "transport": "loopback HTTPS",
+    "database": "isolated fingerprint-verified restored copy",
+    "viewports": [
+      1440,
+      390
+    ],
+    "checks": [
+      "HTTPS restricted-role login",
+      "Account rename review and commit",
+      "Default reassignment",
+      "Zero-balance archival",
+      "إيصال escaped printable document",
+      "إيصال استلام مشتريات escaped printable document",
+      "عرض سعر escaped printable document",
+      "Quotation to active POS conversion with explicit account",
+      "Daily charts, accessible table and exceptions",
+      "Advanced report filters",
+      "Desktop and 390px layouts across six workspaces",
+      "Two SVG trends with keyboard-focusable points across eight UTC days"
+    ],
+    "clientErrors": 0,
+    "serverFailures": 0,
+    "externalRequests": 0,
+    "physicalPrintJobs": 0
+  },
+  "dataSafety": {
+    "apiRunning": true,
+    "webRunning": true,
+    "authenticatedReadEndpoints": 8,
+    "businessTablesUnchanged": 38,
+    "schemaUnchanged": true,
+    "migrationChecksumsVerified": 32,
+    "demoFinancialWrites": 0,
+    "backupTablesVerified": 41,
+    "isolatedRestoreVerified": true
+  },
+  "schemaChanges": {
+    "required": false,
+    "appliedToDemo": 0
+  },
+  "remainingSoftwareDeferrals": [],
+  "operatorTask": "Physical hardware-printer testing",
+  "coverageGate": {
+    "lines": 99,
+    "statements": 99,
+    "functions": 95,
+    "branches": 95
+  }
+}

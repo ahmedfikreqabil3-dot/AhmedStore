@@ -1,6 +1,7 @@
+import {createDocumentService} from '../documents/service.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import type { CreateTreasuryAccount, TreasuryTransferInput, SettlementInput, TreasuryAccount, TreasuryLedger, PartyStatementQuery } from '@ahmed-store/contracts';
+import type { UpdateTreasuryAccount, CreateTreasuryAccount, TreasuryTransferInput, SettlementInput, TreasuryAccount, TreasuryLedger, PartyStatementQuery } from '@ahmed-store/contracts';
 import { can } from '../identity/authorization.js';
 import { customerDebt, ledgerUnits } from '../parties/customer-ledger.js';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
@@ -59,6 +60,29 @@ async function invoices(tx:Prisma.TransactionClient,organizationId:string,input:
 
 export function createTreasuryService(prisma:PrismaClient) {
   return {
+    documents:createDocumentService(prisma),
+    async choices(organizationId:string){return {accounts:await prisma.treasuryAccount.findMany({where:{organizationId,active:true},select:{id:true,name:true,paymentMethod:true,isDefault:true},orderBy:[{paymentMethod:'asc'},{name:'asc'}]})};},
+    async updateAccount(organizationId:string,actorUserId:string,id:string,input:UpdateTreasuryAccount){
+      try{return await retryWriteConflict(()=>prisma.$transaction(async tx=>{
+        await actor(tx,organizationId,actorUserId);
+        const current=await tx.treasuryAccount.findFirst({where:{id,organizationId}});if(!current)throw new TreasuryError('ACCOUNT_UNAVAILABLE');
+        if(current.version!==input.version)throw new TreasuryError('ACCOUNT_CHANGED');
+        if(input.active===false){
+          const [funds]=await tx.$queryRaw<Array<{amount:Prisma.Decimal;future:number}>>(Prisma.sql`SELECT COALESCE(SUM(${signed}),0) AS amount,COUNT(*) FILTER(WHERE t."occurredAt">CURRENT_TIMESTAMP)::int AS future FROM "TreasuryTransaction" t WHERE t."organizationId"=${organizationId} AND t."accountId"=${id}`);
+          if(!funds!.amount.isZero()||funds!.future)throw new TreasuryError('ACCOUNT_NOT_EMPTY');
+        }
+        if(input.makeDefault){if(!current.active||input.active===false)throw new TreasuryError('ACCOUNT_UNAVAILABLE');await tx.treasuryAccount.updateMany({where:{organizationId,paymentMethod:current.paymentMethod,isDefault:true,id:{not:id}},data:{isDefault:false,version:{increment:1}}});}
+        if(current.isDefault&&input.active===false){
+          if(!input.replacementAccountId||input.replacementAccountId===id)throw new TreasuryError('DEFAULT_REPLACEMENT_REQUIRED');
+          const replacement=await availableAccount(tx,organizationId,input.replacementAccountId);if(replacement.paymentMethod!==current.paymentMethod)throw new TreasuryError('ACCOUNT_UNAVAILABLE');
+          await tx.treasuryAccount.update({where:{id},data:{isDefault:false}});
+          await tx.treasuryAccount.update({where:{id:replacement.id},data:{isDefault:true,version:{increment:1}}});
+        }
+        const updated=await tx.treasuryAccount.update({where:{id},data:{name:input.name,active:input.active,...input.makeDefault?{isDefault:true}:input.active===false?{isDefault:false}:{},version:{increment:1}}});
+        await tx.auditEvent.create({data:{organizationId,actorUserId,entityType:'TreasuryAccount',entityId:id,action:'TREASURY_ACCOUNT_UPDATED',details:input}});
+        return {id:updated.id,version:updated.version};
+      },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2002')throw new TreasuryError('ACCOUNT_NAME_EXISTS');throw e;}
+    },
     async accounts(organizationId:string):Promise<{accounts:TreasuryAccount[]}> {
       const now=new Date().toISOString();
       const rows=await prisma.$queryRaw<Array<Omit<TreasuryAccount,'balance'>&{balance:Prisma.Decimal}>>(Prisma.sql`SELECT a.id,a.name,a."paymentMethod",a."isDefault",a.active,a.version,

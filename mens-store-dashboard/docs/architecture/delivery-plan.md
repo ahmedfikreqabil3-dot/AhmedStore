@@ -1,5 +1,21 @@
 # Controlled delivery plan
 
+## Post-launch software closure — 2026-11-03
+
+All requested software deferrals are complete. Treasury maintenance and account
+selection, quotation expiry/POS/printing, receipt templates/settings, dashboard
+charts/exceptions and advanced report filters are delivered. **759 automated
+tests pass**, plus legacy business tests. Full-source coverage is measured at
+99.56% API lines / 98.91% branches and 100% UI lines / 97.90% branches.
+The final build, isolated HTTPS desktop/mobile checks and read-only Demo
+fingerprints pass. No new schema migration or dependency was needed.
+
+Only physical hardware-printer testing remains in the software deferral register.
+External deployment and real-data cutover remain operator activation tasks.
+See [verification](../operations/post-launch-software-verification.json) and
+[deferral closure](post-launch-deferrals.md). Historical checkpoints below remain
+for audit; this closure supersedes their software-deferral status.
+
 ## Owner-approved local software completion — 2026-11-02
 
 **Local software deliverables: 100%.** The owner explicitly separated external

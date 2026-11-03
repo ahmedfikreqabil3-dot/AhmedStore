@@ -1,3 +1,4 @@
+import {AdvancedReportFilters,applicableReportFilters} from './AdvancedReportFilters.js';
 import { useEffect, useState, type FormEvent } from 'react';
 import { reportSchema, type OperationalReport, type ReportQuery } from '@ahmed-store/contracts';
 import { readJson } from './store-api.js';
@@ -6,32 +7,33 @@ import { statementAmount } from './PartyStatement.js';
 const names: Record<ReportQuery['kind'], string> = { sales: 'المبيعات والمرتجعات', purchases: 'المشتريات والمرتجعات', inventory: 'أرصدة المخزون', expenses: 'المصروفات', treasury: 'حركة الأموال', customers: 'أرصدة العملاء', suppliers: 'أرصدة الموردين' };
 const movementNames: Record<string, string> = { CUSTOMER_COLLECTION: 'تحصيل من العميل', SUPPLIER_SETTLEMENT: 'سداد مورد', ACCOUNT_TRANSFER_IN: 'تحويل وارد', ACCOUNT_TRANSFER_OUT: 'تحويل صادر', ACCOUNT_OPENING: 'رصيد افتتاحي', SALE: 'فاتورة بيع', SALES_RETURN: 'مرتجع بيع', PURCHASE: 'فاتورة شراء', PURCHASE_RETURN: 'مرتجع شراء', SALE_RECEIPT: 'تحصيل بيع', RETURN_REFUND: 'رد للعميل', RETURN_REFUND_REVERSAL: 'عكس رد للعميل', EXPENSE_PAYMENT: 'مصروف', PURCHASE_PAYMENT: 'سداد شراء', PURCHASE_PAYMENT_REVERSAL: 'عكس سداد شراء', PURCHASE_RETURN_REFUND: 'استرداد مشتريات', CASH: 'نقدي', CARD: 'بطاقة', BANK_TRANSFER: 'تحويل بنكي', WALLET: 'محفظة' };
 function label(value: string) { return value.split(' · ').map(part => movementNames[part] ?? part).join(' · '); }
-function params(query: {kind: ReportQuery['kind']; from: string; to: string; warehouseId: string; offset: number}) {
+function params(query: {kind: ReportQuery['kind']; from: string; to: string; warehouseId: string; offset: number},filters:Record<string,string>={}) {
   const values = new URLSearchParams({ kind: query.kind, from: query.from+'T00:00:00.000Z', to: query.to+'T23:59:59.999Z', limit: '25', offset: String(query.offset) });
   if (query.warehouseId) values.set('warehouseId', query.warehouseId);
-  return values;
+  Object.entries(filters).forEach(([key,value])=>{if(value)values.set(key,value);});return values;
 }
 export function ReportsWorkspace({branchScoped=false}:{branchScoped?:boolean}={}) {
   const today = new Date().toISOString().slice(0,10);
   const [kind,setKind] = useState<ReportQuery['kind']>('sales'), [from,setFrom] = useState(today.slice(0,8)+'01'), [to,setTo] = useState(today), [warehouseId,setWarehouseId] = useState('');
   const [warehouses,setWarehouses] = useState<Array<{id:string;name:string}>>([]);
+  const [filters,setFilters]=useState<Record<string,string>>({}),[appliedFilters,setAppliedFilters]=useState<Record<string,string>>({});
   const [applied,setApplied] = useState({ kind, from, to, warehouseId, offset:0 });
   const [data,setData] = useState<OperationalReport|null>(null), [loading,setLoading] = useState(true), [error,setError] = useState(''), [validation,setValidation] = useState(''), [reload,setReload] = useState(0), [exporting,setExporting] = useState(false), [exportError,setExportError] = useState('');
   useEffect(() => { let active=true; void readJson<{warehouses:Array<{id:string;name:string}>}>('/warehouses').then(result=>{if(active)setWarehouses(result.warehouses);}).catch(()=>{}); return()=>{active=false;}; },[]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(''); setData(null); setExportError('');
-    void readJson<unknown>(`/reports/operations?${params(applied)}`,{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setData(reportSchema.parse(value));}).catch(()=>{if(!controller.signal.aborted)setError('تعذر تحميل التقرير. تحقق من الاتصال وأعد المحاولة.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    void readJson<unknown>(`/reports/operations?${params(applied,appliedFilters)}`,{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setData(reportSchema.parse(value));}).catch(()=>{if(!controller.signal.aborted)setError('تعذر تحميل التقرير. تحقق من الاتصال وأعد المحاولة.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
-  },[applied,reload]);
+  },[applied,appliedFilters,reload]);
   function submit(event:FormEvent) {
     event.preventDefault();
     if(!from || !to || from>to){setValidation('اختر فترة صحيحة؛ البداية لا تتجاوز النهاية.');return;}
-    setValidation('');setApplied({kind,from,to,warehouseId:['sales','purchases','inventory'].includes(kind)?warehouseId:'',offset:0});setReload(value=>value+1);
+    setAppliedFilters(applicableReportFilters(kind,filters));setValidation('');setApplied({kind,from,to,warehouseId:['sales','purchases','inventory'].includes(kind)?warehouseId:'',offset:0});setReload(value=>value+1);
   }
   async function exportFile() {
     setExporting(true);setExportError('');
     try {
-      const response=await fetch(`/api/v1/reports/operations/export.xlsx?${params(applied)}`,{credentials:'include'});
+      const response=await fetch(`/api/v1/reports/operations/export.xlsx?${params(applied,appliedFilters)}`,{credentials:'include'});
       if(!response.ok)throw Error(response.status===422?'TOO_LARGE':'FAILED');
       const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${applied.kind}-${applied.from}-${applied.to}.xlsx`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     } catch(error) {setExportError(error instanceof Error&&error.message==='TOO_LARGE'?'التقرير يتجاوز ١٠ آلاف سجل. ضيّق الفترة أو اختر فرعًا.':'تعذر تصدير التقرير. أعد المحاولة.');}
@@ -44,7 +46,7 @@ export function ReportsWorkspace({branchScoped=false}:{branchScoped?:boolean}={}
       <label>من تاريخ<input type="date" value={from} required onChange={event=>setFrom(event.target.value)}/></label>
       <label>إلى تاريخ<input type="date" value={to} required onChange={event=>setTo(event.target.value)}/></label>
       {['sales','purchases','inventory'].includes(kind)&&<label>الفرع<select value={warehouseId} onChange={event=>setWarehouseId(event.target.value)}><option value="">{branchScoped?'الفروع المسموح بها':'كل الفروع'}</option>{warehouses.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-    </div><button className="button primary" disabled={loading||exporting}>عرض التقرير</button></form>
+    </div><AdvancedReportFilters kind={kind} values={filters} change={setFilters}/><button className="button primary" disabled={loading||exporting}>عرض التقرير</button></form>
     {validation&&<p role="alert">{validation}</p>}{loading&&<p role="status">جارٍ تحميل التقرير…</p>}
     {error&&<div role="alert"><p>{error}</p><button className="button secondary" onClick={()=>setReload(value=>value+1)}>إعادة تحميل التقرير</button></div>}
     {data&&<><h3>{names[data.kind]}</h3><p>{applied.from} — {applied.to} · {applied.warehouseId ? warehouses.find(item=>item.id===applied.warehouseId)?.name ?? applied.warehouseId : branchScoped?'الفروع المسموح بها':'كل الفروع'} · التوقيت UTC</p>

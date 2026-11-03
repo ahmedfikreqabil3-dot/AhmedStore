@@ -11,7 +11,7 @@ export type PostedExpense = {
   occurredAt: Date;
 };
 
-export type PostExpenseCommand = PostedExpense & { actorUserId: string; idempotencyKey: string };
+export type PostExpenseCommand = PostedExpense & { accountId?:string; actorUserId: string; idempotencyKey: string };
 
 export interface ExpenseRepository {
   findByIdempotencyKey(organizationId: string, idempotencyKey: string): Promise<PostedExpense | null>;

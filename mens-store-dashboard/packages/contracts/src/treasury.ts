@@ -40,3 +40,6 @@ export const treasuryLedgerSchema = z.object({
 export const treasuryPostingSchema = z.object({ id: z.string().uuid(), amount: exactAmount, occurredAt: z.coerce.date(), replayed: z.boolean() });
 export type TreasuryAccount = z.infer<typeof treasuryAccountSchema>;
 export type TreasuryLedger = z.infer<typeof treasuryLedgerSchema>;
+
+export const updateTreasuryAccountSchema=z.object({version:z.number().int().positive(),name:z.string().trim().min(2).max(100).optional(),active:z.boolean().optional(),makeDefault:z.boolean().optional(),replacementAccountId:z.string().uuid().optional(),reason}).strict().refine(v=>v.name!==undefined||v.active!==undefined||v.makeDefault===true,'CHANGE_REQUIRED');
+export type UpdateTreasuryAccount=z.infer<typeof updateTreasuryAccountSchema>;

@@ -1,3 +1,4 @@
+import {checkAccount} from '../finance/account-selection.js';
 import { assertOpenPostingPeriod } from '../finance/posting-period.js';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { retryWriteConflict } from '../shared/retry-write-conflict.js';
@@ -24,6 +25,7 @@ export function createPrismaInvoiceReturnRepository(prisma:PrismaClient):Returns
       const actor=await transaction.user.findFirst({where:{id:command.actorUserId,organizationId:command.organizationId,active:true},select:{role:true}});if(!actor||!can(actor.role,'sales:write'))return {ok:false as const,reason:'ACTOR_UNAVAILABLE' as const};
       await assertOpenPostingPeriod(transaction,command.organizationId,command.actorUserId,command.input.occurredAt);
       const sale=await transaction.sale.findFirst({where:{id:command.input.saleId,organizationId:command.organizationId,status:'POSTED'},include:{lines:true}});if(!sale)return {ok:false as const,reason:'SALE_UNAVAILABLE' as const};
+      for(const payment of command.input.payments)await checkAccount(transaction,command.organizationId,payment.accountId,payment.method);
       const requestedBySaleLine = new Map<string, Prisma.Decimal>();
       for (const line of command.input.lines) {
         const quantity = new Prisma.Decimal(line.quantity);
@@ -39,7 +41,7 @@ export function createPrismaInvoiceReturnRepository(prisma:PrismaClient):Returns
       if (!paid.equals(total)) return { ok: false as const, reason: 'PAYMENT_TOTAL_MISMATCH' as const };
       const salesReturn = await transaction.salesReturn.create({ data: { id: command.id, organizationId: command.organizationId, saleId: sale.id, customerId: sale.customerId, warehouseId: sale.warehouseId, actorUserId: command.actorUserId, reason: command.input.reason, total, status: 'POSTED', idempotencyKey: command.idempotencyKey, occurredAt: command.input.occurredAt, lines: { create: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), saleLineId: line.saleLineId, productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, total: line.total })) }, payments: { create: command.input.payments.map((payment) => ({ id: crypto.randomUUID(), method: payment.method, amount: payment.amount })) } } });
       await transaction.inventoryTransaction.createMany({ data: command.calculated.lines.map((line) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, warehouseId: sale.warehouseId, productId: line.productId, type: 'SALE_RETURN', quantity: line.quantity, referenceType: 'SalesReturn', referenceId: salesReturn.id, occurredAt: command.input.occurredAt })) });
-      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'RETURN_REFUND', paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: salesReturn.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
+      await transaction.treasuryTransaction.createMany({ data: command.input.payments.filter((payment) => payment.method !== 'CREDIT').map((payment) => ({ id: crypto.randomUUID(), organizationId: command.organizationId, type: 'RETURN_REFUND', accountId:payment.accountId, paymentMethod: payment.method, amount: payment.amount, sourceType: 'SalesReturn', sourceId: salesReturn.id, actorUserId: command.actorUserId, occurredAt: command.input.occurredAt })) });
       await recordCustomerCredit(transaction,{organizationId:command.organizationId,customerId:sale.customerId,actorUserId:command.actorUserId,sourceId:salesReturn.id,occurredAt:command.input.occurredAt,type:'RETURN_CREDIT'},command.input.payments);
       await transaction.auditEvent.create({ data: { organizationId: command.organizationId, actorUserId: command.actorUserId, action: 'SALES_RETURN_POSTED', entityType: 'SalesReturn', entityId: salesReturn.id } });
       return { ok: true as const, salesReturn: { id: salesReturn.id, saleId: salesReturn.saleId!, total: salesReturn.total.toFixed(4) } };

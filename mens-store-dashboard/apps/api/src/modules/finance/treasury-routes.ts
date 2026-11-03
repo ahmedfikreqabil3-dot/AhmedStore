@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PublicUser } from '@ahmed-store/contracts';
-import { createTreasuryAccountSchema, treasuryTransferSchema, settlementSchema, treasuryHistoryQuerySchema, settlementPartyQuerySchema, settlementInvoiceQuerySchema } from '@ahmed-store/contracts';
+import { updateTreasuryAccountSchema, createTreasuryAccountSchema, treasuryTransferSchema, settlementSchema, treasuryHistoryQuerySchema, settlementPartyQuerySchema, settlementInvoiceQuerySchema } from '@ahmed-store/contracts';
 import { can } from '../identity/authorization.js';
 import type { SessionResult } from '../identity/session.js';
 import type { createTreasuryService } from './treasury-service.js';
@@ -15,6 +15,11 @@ export function registerTreasuryRoutes(app:FastifyInstance,options:{authenticate
     sessions.set(request,auth.user);
   });
   async function user(request:FastifyRequest){return sessions.get(request)!;}
+  app.patch('/accounts/:accountId',async(request,reply)=>{
+    const id=z.string().uuid().safeParse((request.params as {accountId:string}).accountId),input=updateTreasuryAccountSchema.safeParse(request.body);
+    if(!id.success||!input.success)return reply.code(400).send({error:'INVALID_TREASURY_COMMAND'});const actor=await user(request);
+    return options.service!.updateAccount(actor.organizationId,actor.id,id.data,input.data);
+  });
   app.get('/accounts',async request=>options.service!.accounts((await user(request)).organizationId));
   app.get('/accounts/:accountId/ledger',async(request,reply)=>{
     const params=z.object({accountId:z.string().uuid()}).safeParse(request.params),query=treasuryHistoryQuerySchema.safeParse(request.query);

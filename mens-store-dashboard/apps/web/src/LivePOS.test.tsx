@@ -1,8 +1,10 @@
+import {CommandScope} from './pending-command.js';
+import {draftFixture} from './sale-draft.fixture.js';
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LivePOS } from './LivePOS.js';
-import { ApiError, postSale, saleOptions, type SaleOptions } from './store-api.js';
+import { ApiError, readJson, postSale, saleOptions, type SaleOptions } from './store-api.js';
 vi.mock('./InvoiceDocument.js',()=>({InvoiceDocument:()=> <section>إيصال الفاتورة الحية</section>}));
 vi.mock('./store-api.js', async (original) => ({ ...await original<typeof import('./store-api.js')>(), saleOptions: vi.fn(), postSale: vi.fn() }));
 const id = 'a62886aa-d435-4145-a551-37b675a86f84';
@@ -134,3 +136,13 @@ it('does not discard an uncertain recovered sale when a later retry is rejected'
 });
 
 it("opens the posted receipt without reposting the sale",async()=>{await ready();selections();scan();review();fireEvent.click(screen.getByRole("button",{name:"تأكيد البيع والدفع"}));await screen.findByRole("button",{name:"عرض وطباعة آخر فاتورة"});fireEvent.click(screen.getByRole("button",{name:"عرض وطباعة آخر فاتورة"}));expect(screen.getByText("إيصال الفاتورة الحية")).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"إخفاء الإيصال"}));expect(screen.queryByText("إيصال الفاتورة الحية")).not.toBeInTheDocument();expect(postSale).toHaveBeenCalledOnce();});
+
+it('hands a quotation to POS, converts its original document once and retains the existing cart',async()=>{
+ const quote={...draftFixture,expired:false},api=vi.spyOn(await import('./store-api.js'),'readJson');
+ api.mockImplementation(async(path)=>path.endsWith('/convert')?{...quote,status:'CONVERTED',saleId:quote.id}:quote);
+ render(<CommandScope.Provider value="org.user"><LivePOS userId="user" organizationId="org"/></CommandScope.Provider>);await screen.findByLabelText('فرع البيع');selections();scan();
+ act(()=>window.dispatchEvent(new CustomEvent('ahmed-store:pos-draft',{detail:{id:quote.id}})));
+ fireEvent.click(screen.getByRole('button',{name:'فتح العرض في سلة البيع'}));await screen.findByText('سلة نقطة البيع من مسودة محفوظة');await screen.findByRole('button',{name:'مراجعة تحويل المسودة لبيع'});
+ fireEvent.click(screen.getByRole('button',{name:'مراجعة تحويل المسودة لبيع'}));fireEvent.click(screen.getByRole('button',{name:'تأكيد العملية'}));await screen.findByText('إيصال الفاتورة الحية');expect(api).toHaveBeenCalledWith(`/sale-drafts/${quote.id}/convert`,expect.objectContaining({method:'POST'}));expect(postSale).not.toHaveBeenCalled();
+ await waitFor(()=>expect(screen.getByRole('button',{name:'رجوع للسلة السابقة'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'رجوع للسلة السابقة'}));expect(screen.getByLabelText('كمية قميص')).toHaveValue(1);
+});

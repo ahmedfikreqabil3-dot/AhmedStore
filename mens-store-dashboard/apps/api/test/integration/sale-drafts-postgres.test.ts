@@ -72,3 +72,12 @@ it('rolls back failed sale checks and draft audits, and safely races cancel with
   const before=await db.sale.count({where:{organizationId:org}});await expect(createSaleDraftService(proxy).convert(org,actor,draft.id,{version:1,payments:[{method:'CREDIT',amount:'19.95'}]})).rejects.toThrow('AUDIT_FAILURE');expect(await db.sale.count({where:{organizationId:org}})).toBe(before);expect((await service.read(org,draft.id)).status).toBe('OPEN');
   const race=await create();await Promise.allSettled([service.cancel(org,actor,race.id,1),service.convert(org,actor,race.id,{version:1,payments:[{method:'CREDIT',amount:'19.95'}]})]);const final=await service.read(org,race.id);expect(['CONVERTED','CANCELLED']).toContain(final.status);expect(await db.sale.count({where:{organizationId:org}})).toBe(before+(final.status==='CONVERTED'?1:0));
 });
+
+it('enforces the 30-day quotation policy without postings and still permits cancellation',async()=>{
+ const clock={at:new Date('2026-01-01T12:00:00Z')};const timed=createSaleDraftService(db,()=>clock.at);
+ const quote=await timed.create(org,actor,randomUUID(),{kind:'QUOTATION',customerId:customer,warehouseId:warehouse,lines:[{productId:product,quantity:'1',unitPrice:'10',discount:'0'}]});
+ const before=await financialState();clock.at=new Date('2026-01-31T12:00:00Z');
+ expect((await timed.read(org,quote.id)).expired).toBe(true);
+ await expect(timed.convert(org,actor,quote.id,{version:quote.version,payments:[{method:'CASH',amount:'10'}]})).rejects.toThrow('DRAFT_EXPIRED');
+ expect(await financialState()).toEqual(before);expect((await timed.cancel(org,actor,quote.id,quote.version)).status).toBe('CANCELLED');
+});

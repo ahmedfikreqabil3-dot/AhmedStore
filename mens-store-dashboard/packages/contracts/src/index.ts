@@ -26,3 +26,5 @@ export * from './sale-drafts.js';
 export * from './purchase-orders.js';
 
 export * from './management.js';
+
+export * from './documents.js';

@@ -40,7 +40,7 @@ export function createNoInvoiceReturnService(repository: NoInvoiceReturnsReposit
 export interface NoInvoiceApprovalRepository {
   listPending(organizationId: string): Promise<PendingNoInvoiceApproval[]>;
   findPending(id: string, organizationId: string): Promise<ExistingNoInvoiceReturn | null>;
-  approve(input: { id: string; organizationId: string; financeUserId: string }): Promise<ApproveNoInvoiceReturnResult>;
+  approve(input: { id: string; organizationId: string; financeUserId: string; accountIds?:Record<string,string> }): Promise<ApproveNoInvoiceReturnResult>;
 }
 
 export type ApproveNoInvoiceReturnResult =
@@ -52,10 +52,10 @@ export function createNoInvoiceApprovalService(repository: NoInvoiceApprovalRepo
     async listPending(organizationId: string): Promise<PendingNoInvoiceApproval[]> {
       return repository.listPending(organizationId);
     },
-    async approve(organizationId: string, financeUserId: string, returnId: string): Promise<ApproveNoInvoiceReturnResult> {
+    async approve(organizationId: string, financeUserId: string, returnId: string, accountIds?:Record<string,string>): Promise<ApproveNoInvoiceReturnResult> {
       const pending = await repository.findPending(returnId, organizationId);
       if (!pending || pending.status==='VOIDED') return { ok: false, reason: 'RETURN_NOT_PENDING' };
-      return repository.approve({ id: returnId, organizationId, financeUserId });
+      return repository.approve({ id: returnId, organizationId, financeUserId,...(accountIds?{accountIds}:{}) });
     }
   };
 }

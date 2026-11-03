@@ -1,3 +1,5 @@
+import {z} from 'zod';
+import {registerDocumentRoutes} from './modules/documents/routes.js';
 import {randomUUID} from 'node:crypto';
 import {runtimeConfig} from './operations/config.js';
 import {operations,type OperationsOptions} from './operations/http.js';
@@ -124,7 +126,7 @@ export interface NoInvoiceReturnService {
 
 export interface NoInvoiceApprovalService {
   listPending(organizationId: string): Promise<Array<{ id: string; organizationId: string; customerId: string; warehouseId: string; actorUserId: string; reason: string; total: string; status: 'PENDING_APPROVAL'; occurredAt: Date }>>;
-  approve(organizationId: string, financeUserId: string, returnId: string): Promise<{ ok: true; salesReturn: { id: string } } | { ok: false; reason: string }>;
+  approve(organizationId: string, financeUserId: string, returnId: string,accountIds?:Record<string,string>): Promise<{ ok: true; salesReturn: { id: string } } | { ok: false; reason: string }>;
 }
 
 export interface ShiftTotalsService {
@@ -174,6 +176,7 @@ export async function buildApp(identityService: IdentityService, authenticationS
   operations(app,config,operational);
   app.addHook('onRequest',(_request,_reply,done)=>{branchContext.run({},done);});
   app.addHook('preHandler',async(request,reply)=>{if(!authenticationService.branchScopeEnabled)return;const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok||auth.user.warehouseIds===undefined)return;const path=request.url.split('?')[0]!;if(!branchRequestAllowed(path,request.method,request.query as Record<string,unknown>,request.body,auth.user.warehouseIds))return reply.code(403).send({error:'BRANCH_FORBIDDEN'});});
+  registerDocumentRoutes(app,{authenticate:r=>authenticationService.authenticate(readSessionToken(r.headers.cookie)),service:treasuryService?.documents});
   registerUserAdministration(app,{authenticate:request=>authenticationService.authenticate(readSessionToken(request.headers.cookie)),service:identityService.administration});
   app.setErrorHandler((error,request,reply)=>{const safe=publicError(error,request.id);return reply.code(safe.statusCode).send(safe.body);});
   app.addContentTypeParser('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -604,6 +607,11 @@ export async function buildApp(identityService: IdentityService, authenticationS
     return reply.code(result.replayed ? 200 : 201).send(result.purchaseReturn);
   });
 
+  app.get('/api/v1/treasury-options',async(request,reply)=>{
+    const auth=await authenticationService.authenticate(readSessionToken(request.headers.cookie));if(!auth.ok)return reply.code(401).send({error:auth.reason});
+    if(!can(auth.user.role,'sales:write')&&!can(auth.user.role,'expenses:manage')&&!can(auth.user.role,'purchases:manage'))return reply.code(403).send({error:'FORBIDDEN'});
+    if(!treasuryService)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});return treasuryService.choices(auth.user.organizationId);
+  });
   app.get('/api/v1/pos/options', { schema: { summary: 'Read organization sale-entry options without purchase costs', tags: ['Sales'] } }, async (request, reply) => {
     const authenticated = await authenticationService.authenticate(readSessionToken(request.headers.cookie));
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
@@ -723,7 +731,10 @@ export async function buildApp(identityService: IdentityService, authenticationS
     if (!authenticated.ok) return reply.code(401).send({ error: authenticated.reason });
     if (!can(authenticated.user.role, 'returns:approve_no_invoice')) return reply.code(403).send({ error: 'FORBIDDEN' });
     const { returnId } = request.params as { returnId: string };
-    const result = await noInvoiceApprovalService!.approve(authenticated.user.organizationId, authenticated.user.id, returnId);
+    const selection=z.object({accountIds:z.record(z.string().regex(/^(CASH|CARD|WALLET|INSTAPAY)$/),z.string().uuid()).optional()}).strict().safeParse(request.body??{});
+    if(!selection.success)return reply.code(400).send({error:'INVALID_ACCOUNT_SELECTION'});
+    const args=[authenticated.user.organizationId,authenticated.user.id,returnId] as const;
+    const result=selection.data.accountIds?await noInvoiceApprovalService!.approve(...args,selection.data.accountIds):await noInvoiceApprovalService!.approve(...args);
     if (!result.ok) return reply.code(409).send({ error: result.reason });
     return result.salesReturn;
   });

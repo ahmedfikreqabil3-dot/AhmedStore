@@ -4,6 +4,7 @@ import { paymentMethodSchema } from './sales.js';
 import { partyStatementQuerySchema } from './party-statement.js';
 
 export const createExpenseSchema = z.object({
+  accountId: z.string().uuid().optional(),
   category: z.string().trim().min(2).max(120),
   description: z.string().trim().min(3).max(500),
   paymentMethod: paymentMethodSchema.exclude(['CREDIT']),

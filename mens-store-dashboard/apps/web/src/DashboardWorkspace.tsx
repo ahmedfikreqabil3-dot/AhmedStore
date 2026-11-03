@@ -1,3 +1,4 @@
+import {DashboardAnalytics} from './DashboardAnalytics.js';
 import {useEffect,useState,type FormEvent} from 'react';
 import {reportSchema,type OperationalReport} from '@ahmed-store/contracts';
 import {readJson} from './store-api.js';
@@ -37,6 +38,7 @@ export function DashboardWorkspace(){
         ['صافي المبيعات',data.sales.totalAmount!,'خلال الفترة'],['المصروفات',data.expenses.totalAmount!,'خلال الفترة'],['أرصدة العملاء',data.customers.totalAmount!,'حتى نهاية الفترة'],['أرصدة الموردين',data.suppliers.totalAmount!,'حتى نهاية الفترة']
       ].map(([title,amount,note])=><div key={title}><dt>{title}</dt><dd><bdi>{statementAmount(amount!)}</bdi> <small>ج.م</small></dd><small>{note}</small></div>)}</dl>
       <div className="dashboard-comparison"><h3>مقارنة المبيعات</h3><p>{previousFrom} — {previousTo} · الفترة السابقة بنفس عدد الأيام</p><p>صافي الفترة السابقة: <bdi>{statementAmount(data.previous.totalAmount!)}</bdi> ج.م</p><strong>{comparison>0n?'المبيعات أعلى من الفترة السابقة':comparison<0n?'المبيعات أقل من الفترة السابقة':'المبيعات بدون تغيير عن الفترة السابقة'}</strong></div>
+      <DashboardAnalytics from={period.from} to={period.to}/>
       <h3>آخر مستندات المبيعات خلال الفترة</h3>{data.sales.rows.length===0?<p className="operation-empty">لا توجد مبيعات أو مرتجعات خلال الفترة.</p>:<ul className="operation-lines">{data.sales.rows.map(row=><li key={row.id}><div><strong>{row.label==='SALE'?'فاتورة بيع':'مرتجع بيع'}</strong><p><bdi className="operation-reference">{row.id}</bdi></p><p>{row.occurredAt.toISOString().slice(0,10)} · <bdi>{statementAmount(row.amount!)}</bdi> ج.م</p></div></li>)}</ul>}
       <p className="operation-note">الإجماليات تشمل كل النتائج؛ القائمة تعرض أحدث خمسة مستندات. أرصدة العملاء والموردين صافية وقد تتضمن دفعات مقدمة؛ ليست قيمة الربح.</p><div className="operation-actions"><a className="button secondary" href="#sales">راجع فواتير البيع</a><a className="button secondary" href="#reports">افتح التقارير التفصيلية</a></div>
     </>}

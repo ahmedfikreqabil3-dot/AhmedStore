@@ -1,5 +1,15 @@
 # Phase 3/4 execution ledger
 
+## Post-launch software closure — 2026-11-03
+
+All requested software deferrals are complete and verified: treasury maintenance
+and account selection; quotation expiry/POS/printing; receipt templates and
+settings; dashboard analytics and advanced report filters; expanded coverage.
+759 automated tests pass, plus legacy business tests. See
+[verification](../operations/post-launch-software-verification.json). Only
+physical printer testing remains in the [deferral register](post-launch-deferrals.md).
+Historical checkpoints below retain their original scope.
+
 Owner instruction (2026-10-30): finish incomplete interface designs and journeys,
 then continue until backend Phase 3 and frontend Phase 4 meet their exit gates.
 Prototype completion alone is not operational delivery. No phase is accepted

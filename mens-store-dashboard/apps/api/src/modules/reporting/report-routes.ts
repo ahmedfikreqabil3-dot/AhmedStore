@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { reportQuerySchema } from '@ahmed-store/contracts';
+import { analyticsQuerySchema,reportQuerySchema } from '@ahmed-store/contracts';
 import ExcelJS from 'exceljs';
 import type { SessionResult } from '../identity/session.js';
 import type { createReportsService } from './reports.js';
@@ -9,6 +9,10 @@ export function registerReportRoutes(app: FastifyInstance, options: {
   authenticate: (request: FastifyRequest) => Promise<SessionResult>;
   service?: ReturnType<typeof createReportsService>;
 }) {
+  for(const analytics of [false,true])app.get(analytics?'/api/v1/reports/analytics':'/api/v1/reports/options',async(request,reply)=>{
+    const auth=await options.authenticate(request);if(!auth.ok)return reply.code(401).send({error:auth.reason});if(!can(auth.user.role,'reports:read')||(analytics&&auth.user.warehouseIds!==undefined))return reply.code(403).send({error:'FORBIDDEN'});if(!options.service)return reply.code(503).send({error:'SERVICE_UNAVAILABLE'});
+    if(!analytics)return options.service.choices(auth.user.organizationId);const q=analyticsQuerySchema.safeParse(request.query);if(!q.success)return reply.code(400).send({error:'INVALID_ANALYTICS_PERIOD'});return options.service.analytics(auth.user.organizationId,q.data);
+  });
   for (const exportAll of [false, true]) app.get(`/api/v1/reports/operations${exportAll ? '/export.xlsx' : ''}`, async (request, reply) => {
     const auth = await options.authenticate(request);
     if (!auth.ok) return reply.code(401).send({ error: auth.reason });

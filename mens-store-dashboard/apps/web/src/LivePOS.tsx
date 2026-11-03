@@ -1,3 +1,6 @@
+import {POSDraftCart} from './POSDraftCart.js';
+import {saleDraftSchema} from '@ahmed-store/contracts';
+import {AccountSelect} from './AccountSelect.js';
 import { InvoiceDocument } from './InvoiceDocument.js';
 import { useEffect, useRef, useState } from 'react';
 import type { CreateSaleInput, PaymentMethod } from '@ahmed-store/contracts';
@@ -9,6 +12,10 @@ const methods: Array<[PaymentMethod, string]> = [['CASH', 'نقدي'], ['CARD', 
 
 export function LivePOS({ userId, organizationId }: { userId: string; organizationId: string }) {
   const storageKey = `ahmed-store.pending-sale.${organizationId}.${userId}`;
+  const handoffKey=`ahmed-store.pos-draft.${organizationId}.${userId}`;
+  const [handoffId,setHandoffId]=useState(()=>{try{const id=sessionStorage.getItem(handoffKey);return saleDraftSchema.shape.id.safeParse(id).success?id!:'';}catch{return '';}});
+  const [incomingId,setIncomingId]=useState(''),[handoffError,setHandoffError]=useState('');
+  const handoffDialog=useRef<HTMLDialogElement>(null);
   const [attempt, setAttempt] = useState(() => loadAttempt(storageKey));
   const [options, setOptions] = useState<SaleOptions | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -18,7 +25,7 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
   const [customerId, setCustomerId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [discount, setDiscount] = useState('0');
-  const [payments, setPayments] = useState<Array<{ method: PaymentMethod; amount: string }>>([{ method: 'CASH', amount: '' }]);
+  const [payments, setPayments] = useState<Array<{ method: PaymentMethod; amount: string;accountId?:string }>>([{ method: 'CASH', amount: '' }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -41,11 +48,13 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
     return () => { active = false; };
   }, [reload]);
   useEffect(() => {
-    const protect = (event: BeforeUnloadEvent) => { if (cart.length || attempt) { event.preventDefault(); event.returnValue = ''; } };
+    const protect = (event: BeforeUnloadEvent) => { if (cart.length || attempt || handoffId) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', protect);
     return () => window.removeEventListener('beforeunload', protect);
-  }, [cart, attempt]);
+  }, [cart, attempt,handoffId]);
 
+  useEffect(()=>{const receive=(event:Event)=>{const id=(event as CustomEvent<{id:string}>).detail?.id;if(!saleDraftSchema.shape.id.safeParse(id).success)return;if(attempt||busy||handoffId){setHandoffError('أكمل الطلب الحالي أو ارجع للسلة قبل استلام عرض آخر.');return;}setIncomingId(id);setHandoffError('');};window.addEventListener('ahmed-store:pos-draft',receive);return()=>window.removeEventListener('ahmed-store:pos-draft',receive);},[attempt,busy,handoffId]);
+  useEffect(()=>{if(incomingId&&options)handoffDialog.current?.showModal();},[incomingId,options]);
   const subtotal = cart.reduce((sum, line) => sum + units(line.product.salePrice)! * BigInt(line.quantity), 0n);
   const discountUnits = units(discount);
   const discountValid = discountUnits !== null && discountUnits < subtotal;
@@ -101,10 +110,12 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
       } else setError('تعذر تأكيد نتيجة الحفظ. أعد محاولة نفس الفاتورة؛ لا تبدأ فاتورة أخرى قبل التحقق من نتيجتها.');
     } finally { submitting.current = false; setBusy(false); }
   }
+  if(handoffId)return <>{handoffError&&<p role="alert">{handoffError}</p>}<POSDraftCart id={handoffId} close={()=>{sessionStorage.removeItem(handoffKey);setHandoffId('');setHandoffError('');}}/></>;
   if (!options) return <section className="surface loading-panel" aria-live="polite">{loadError ? <><p role="alert">{loadError}</p><button className="button secondary" onClick={() => setReload((value) => value + 1)}>إعادة تحميل بيانات البيع</button></> : <p>جارٍ تحميل بيانات نقطة البيع…</p>}</section>;
   const selectedBranchId = attempt?.input.warehouseId ?? warehouseId;
   const selectedBranchName = options.warehouses.find((branch) => branch.id === selectedBranchId)?.name ?? (selectedBranchId ? 'فرع الفاتورة المحفوظة غير متاح في القائمة الحالية' : 'لم يتم اختيار فرع');
   return <>
+    {handoffError&&<p role="alert">{handoffError}</p>}
     {attempt && <div className="info-callout recovery-banner" role="status">توجد محاولة تسجيل فاتورة لم تُحسم نتيجتها. البيانات مقفلة لحين إعادة المحاولة بنفس مفتاح العملية. <button className="text-button" onClick={() => dialog.current!.showModal()}>التحقق وإعادة المحاولة</button></div>}
     {success && <><p role="status" className="success-banner">{success}</p><button className="button secondary" onClick={()=>setShowReceipt(value=>!value)}>{showReceipt ? 'إخفاء الإيصال' : 'عرض وطباعة آخر فاتورة'}</button>{showReceipt&&<InvoiceDocument key={lastSaleId} saleId={lastSaleId}/>}</>}
     <div className="pos-layout">
@@ -120,13 +131,14 @@ export function LivePOS({ userId, organizationId }: { userId: string; organizati
         <div className="summary-line"><span>المجموع الفرعي</span><bdi>{displayMoney(recoveredSubtotal ?? subtotal)} ج.م</bdi></div><label className="field"><span>خصم الفاتورة</span><input aria-label="خصم الفاتورة" inputMode="decimal" value={attempt ? decimal(attempt.input.lines.reduce((sum, line) => sum + units(line.discount)!, 0n)) : discount} onChange={(event) => setDiscount(event.target.value)} /></label>
         {cart.length > 0 && !discountValid && <p role="alert">أدخل خصمًا صحيحًا أقل من إجمالي الفاتورة، بحد أقصى 4 خانات عشرية.</p>}
         <div className="grand-total"><span>المبلغ المطلوب<strong><bdi>{displayMoney(amountDue)}</bdi><small>ج.م</small></strong></span><Icon name="wallet" size={27}/></div>
-        <div className="payment-label">طرق السداد</div>{shownPayments.map((payment, index) => <div className="live-payment-row" key={index}><select aria-label={`طريقة الدفعة ${index + 1}`} value={payment.method} onChange={(event) => setPayments((old) => old.map((item, i) => i === index ? { ...item, method: event.target.value as PaymentMethod } : item))}>{methods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input aria-label={`مبلغ الدفعة ${index + 1}`} inputMode="decimal" value={payment.amount} placeholder={payments.length === 1 ? decimal(total) : '0.0000'} onChange={(event) => setPayments((old) => old.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))}/>{payments.length > 1 && <button type="button" className="icon-button" aria-label={`حذف الدفعة ${index + 1}`} onClick={() => setPayments((old) => old.filter((_, i) => i !== index))}><Icon name="close" size={15}/></button>}</div>)}
+        <div className="payment-label">طرق السداد</div>{shownPayments.map((payment, index) => <div className="live-payment-row" key={index}><select aria-label={`طريقة الدفعة ${index + 1}`} value={payment.method} onChange={(event) => setPayments((old) => old.map((item, i) => i === index ? { ...item, method: event.target.value as PaymentMethod,accountId:undefined } : item))}>{methods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><AccountSelect method={payment.method} value={payment.accountId} disabled={!!attempt} label={`خزينة الدفعة ${index+1}`} onChange={id=>setPayments(old=>old.map((p,i)=>i===index?{...p,accountId:id||undefined}:p))}/><input aria-label={`مبلغ الدفعة ${index + 1}`} inputMode="decimal" value={payment.amount} placeholder={payments.length === 1 ? decimal(total) : '0.0000'} onChange={(event) => setPayments((old) => old.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))}/>{payments.length > 1 && <button type="button" className="icon-button" aria-label={`حذف الدفعة ${index + 1}`} onClick={() => setPayments((old) => old.filter((_, i) => i !== index))}><Icon name="close" size={15}/></button>}</div>)}
         <button className="text-button" onClick={() => setPayments((old) => [...allocations, { method: 'CARD', amount: '' }])}><Icon name="plus" size={15}/>تقسيم السداد / إضافة دفعة</button>
         {payments.length === 1 && <p className="muted">ترك المبلغ فارغًا يعني سداد كامل الإجمالي بالطريقة المختارة.</p>}
         {cart.length > 0 && paid !== total && <p role="alert">مجموع الدفعات يجب أن يساوي الإجمالي تمامًا.</p>}
       </fieldset>{error && <p role="alert" className="error-banner checkout-error">{error}</p>}<div className="live-pay-action"><button className="button primary checkout-button" disabled={(!valid && !attempt) || busy} onClick={() => { setError(''); dialog.current!.showModal(); }}><span>{attempt ? 'إعادة محاولة نفس الفاتورة' : 'مراجعة وإتمام البيع'}</span><Icon name="arrow"/></button></div></aside>
     </div>
 
+    <dialog ref={handoffDialog} className="preview-dialog" aria-labelledby="handoff-title" onCancel={()=>setIncomingId('')}><h2 id="handoff-title">استلام عرض السعر في نقطة البيع</h2><p>ستُعرض أصناف العرض وأسعاره الأصلية. سلتك الحالية محفوظة للرجوع إليها؛ التحويل للبيع يتم مرة واحدة فقط بعد التأكيد.</p><button className="button primary" onClick={()=>{sessionStorage.setItem(handoffKey,incomingId);setHandoffId(incomingId);setIncomingId('');handoffDialog.current?.close();}}>فتح العرض في سلة البيع</button><button className="button secondary" onClick={()=>{setIncomingId('');handoffDialog.current?.close();}}>الاحتفاظ بالسلة الحالية</button></dialog>
     <dialog ref={dialog} className="preview-dialog" aria-labelledby="live-payment-title" onCancel={(event) => { if (busy) event.preventDefault(); }}><div className="modal-heading"><h2 id="live-payment-title">تأكيد تسجيل الفاتورة</h2><button className="icon-button" disabled={busy} aria-label="إغلاق الدفع" onClick={() => dialog.current!.close()}><Icon name="close"/></button></div><div className="payment-preview-amount"><span>المبلغ المطلوب</span><strong><bdi>{displayMoney(amountDue)}</bdi><small> ج.م</small></strong></div><div className="branch-context"><span className="branch-context-label">سيتم البيع من</span><strong>{selectedBranchName}</strong></div><p className="modal-description">التأكيد يسجّل فاتورة فعلية ويحدّث المخزون والأرصدة.</p>{error && <p role="alert">{error}</p>}<div className="modal-actions"><button className="button primary" disabled={busy} onClick={() => void confirm()}>{busy ? 'جارٍ تأكيد الحفظ…' : 'تأكيد البيع والدفع'}</button><button className="button secondary" disabled={busy} onClick={() => dialog.current!.close()}>رجوع للفاتورة</button></div></dialog>
   </>;
 }

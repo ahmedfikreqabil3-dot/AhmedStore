@@ -15,6 +15,7 @@ export const saleLineInputSchema = z.object({
 export type SaleLineInput = z.infer<typeof saleLineInputSchema>;
 
 export const salePaymentInputSchema = z.object({
+  accountId: z.string().uuid().optional(),
   method: paymentMethodSchema,
   amount: positiveDecimalStringSchema
 });

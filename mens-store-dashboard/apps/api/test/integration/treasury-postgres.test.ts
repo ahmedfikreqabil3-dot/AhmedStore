@@ -1,3 +1,5 @@
+import {createSaleDraftService} from '../../src/modules/sales/drafts.js';
+import {branchContext} from '../../src/modules/identity/branch-scope.js';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { beforeEach,afterEach,afterAll,expect,it } from 'vitest';
@@ -22,7 +24,7 @@ afterEach(async()=>{
   await db.returnPayment.deleteMany({where:{salesReturn:where}});await db.returnLine.deleteMany({where:{salesReturn:where}});await db.salesReturn.deleteMany({where});
   await db.purchaseReturnSettlement.deleteMany({where:{purchaseReturn:where}});await db.purchaseReturnLine.deleteMany({where:{purchaseReturn:where}});await db.purchaseReturn.deleteMany({where});
   await db.salePayment.deleteMany({where:{sale:where}});await db.saleLine.deleteMany({where:{sale:where}});await db.sale.deleteMany({where});await db.purchasePayment.deleteMany({where:{purchase:where}});await db.purchaseLine.deleteMany({where:{purchase:where}});await db.purchase.deleteMany({where});
-  await db.product.deleteMany({where});await db.customer.deleteMany({where});await db.supplier.deleteMany({where});await db.warehouse.deleteMany({where});await db.user.deleteMany({where});await db.organization.deleteMany({where:{id:{in:[org,other]}}});
+  await db.saleDraft.deleteMany({where});await db.expense.deleteMany({where});await db.product.deleteMany({where});await db.category.deleteMany({where});await db.customer.deleteMany({where});await db.supplier.deleteMany({where});await db.warehouse.deleteMany({where});await db.user.deleteMany({where});await db.organization.deleteMany({where:{id:{in:[org,other]}}});
 });
 afterAll(()=>db.$disconnect());
 const account=(openingBalance='100.1234',paymentMethod:'CASH'|'CARD'|'WALLET'|'INSTAPAY'='CASH',name=randomUUID())=>treasury.createAccount(org,user,randomUUID(),{name,paymentMethod,openingBalance,reason});
@@ -149,4 +151,98 @@ it('protects current and future balances when later-dated withdrawals already ex
   const empty=await account('0'),target=await account('0');
   await db.treasuryTransaction.create({data:{organizationId:org,accountId:empty.id,actorUserId:user,paymentMethod:'CASH',type:'ACCOUNT_OPENING',amount:'10',sourceType:'QA',sourceId:randomUUID(),occurredAt:new Date(Date.now()+86400000)}});
   await expect(treasury.transfer(org,user,randomUUID(),{fromAccountId:empty.id,toAccountId:target.id,amount:'1',reason})).rejects.toMatchObject({reason:'INSUFFICIENT_FUNDS'});
+});
+
+it('maintains names/defaults and archives only empty accounts with a valid replacement',async()=>{
+ const a=await account('0'),b=await account('0');
+ await treasury.updateAccount(org,user,a.id,{version:1,makeDefault:true,reason});
+ await expect(treasury.updateAccount(org,user,a.id,{version:1,name:'Stale name',reason})).rejects.toThrow('ACCOUNT_CHANGED');
+ await expect(treasury.updateAccount(org,user,a.id,{version:2,active:false,reason})).rejects.toThrow('DEFAULT_REPLACEMENT_REQUIRED');
+ await treasury.updateAccount(org,user,a.id,{version:2,name:'Archived empty cash',active:false,replacementAccountId:b.id,reason});
+ expect(await db.treasuryAccount.findUnique({where:{id:b.id}})).toMatchObject({isDefault:true,active:true});
+ expect(await db.treasuryAccount.findUnique({where:{id:a.id}})).toMatchObject({active:false,name:'Archived empty cash'});
+ const funded=await account('5');await expect(treasury.updateAccount(org,user,funded.id,{version:1,active:false,reason})).rejects.toThrow('ACCOUNT_NOT_EMPTY');
+ expect(await db.treasuryTransaction.count({where:{organizationId:org}})).toBe(1);
+});
+it('posts explicit sale/expense accounts atomically and rejects foreign, archived or mismatched selections',async()=>{
+ const cash=await account('0'),card=await account('0','CARD');
+ const input={customerId:customer,warehouseId:warehouse,lines:[{productId:product,quantity:'1',unitPrice:'10',discount:'0'}],payments:[{method:'CASH' as const,amount:'10',accountId:cash.id}],occurredAt:now()};
+ const result=await services.salesService.post(org,user,randomUUID(),input);expect(result.ok).toBe(true);if(!result.ok)throw Error();
+ expect(await db.treasuryTransaction.findFirst({where:{sourceId:result.sale.id}})).toMatchObject({accountId:cash.id});
+ const before=await db.sale.count({where:{organizationId:org}});
+ await expect(services.salesService.post(org,user,randomUUID(),{...input,payments:[{...input.payments[0]!,accountId:card.id}]})).rejects.toThrow('ACCOUNT_UNAVAILABLE');
+ expect(await db.sale.count({where:{organizationId:org}})).toBe(before);
+ const expense=await services.expenseService.post(org,user,randomUUID(),{category:'Office',description:'Selected account test',amount:'1',paymentMethod:'CASH',accountId:cash.id,occurredAt:now()});
+ expect(expense.ok).toBe(true);if(!expense.ok)throw Error();expect(await db.treasuryTransaction.findFirst({where:{sourceId:expense.expense.id}})).toMatchObject({accountId:cash.id});
+ await expect(services.expenseService.post(other,user,randomUUID(),{category:'Office',description:'Foreign',amount:'1',paymentMethod:'CASH',accountId:cash.id,occurredAt:now()})).resolves.toMatchObject({ok:false});
+});
+
+it('prints immutable purchase snapshots and both settlement kinds with tenant-scoped document settings',async()=>{
+ const cash=await account('200'),p=await purchase(),saleRow=await sale();
+ await services.categoryService.management.saveSettings(org,user,{name:'Receipt business',phone:'123',address:'Office',receiptHeader:'Custom heading',receiptFooter:'Custom ending',version:1});
+ expect(await treasury.documents.settings(org)).toMatchObject({name:'Receipt business',receiptHeader:'Custom heading',receiptFooter:'Custom ending'});
+ await db.product.update({where:{id:product},data:{name:'Renamed catalogue item'}});
+ const purchaseDocument=await treasury.documents.read(org,'purchase',p.id);expect(purchaseDocument.total).toBe('100.0000');expect(purchaseDocument.rows[0]![0]).toBe('Treasury product');
+ for(const [kind,partyId,title] of [['customers',customer,'إيصال تحصيل عميل'],['suppliers',supplier,'إيصال سداد مورد']] as const){const posted=await treasury.settle(org,user,randomUUID(),{kind,partyId,accountId:cash.id,amount:'20',reason,allocations:kind==='customers'?[{documentId:saleRow.id,amount:'10'}]:[]});const doc=await treasury.documents.read(org,'settlement',posted.id);expect(doc).toMatchObject({title,total:'20.0000',rows:kind==='customers'?[[saleRow.id,'10.0000'],['تسوية على الحساب','10.0000']]:[['تسوية على الحساب','20.0000']]});await expect(treasury.documents.read(other,'settlement',posted.id)).rejects.toThrow('DOCUMENT_NOT_FOUND');}
+ await expect(treasury.documents.read(other,'purchase',p.id)).rejects.toThrow('DOCUMENT_NOT_FOUND');
+});
+
+it('reconciles daily analytics, current exceptions and advanced screen/export filters without posting reads',async()=>{
+ const cash=await account('100'),card=await account('0','CARD'),sold=await sale(),bought=await purchase();
+ const category=await db.category.create({data:{organizationId:org,name:'Analytics category'}});await db.product.update({where:{id:product},data:{categoryId:category.id}});
+ await services.invoiceReturnService.post(org,user,randomUUID(),{saleId:sold.id,lines:[{saleLineId:sold.lines[0]!.id,quantity:'2'}],payments:[{method:'CREDIT',amount:'20'}],reason,occurredAt:now()});
+ await services.purchaseReturnService.post(org,user,randomUUID(),{purchaseId:bought.id,lines:[{purchaseLineId:bought.lines[0]!.id,quantity:'2'}],settlements:[{kind:'SUPPLIER_CREDIT',amount:'20'}],reason,occurredAt:now()});
+ const period={from:new Date(Date.now()-3*86400000),to:new Date(Date.now()+86400000)},base={...period,limit:100,offset:0};
+ const salesQuery={...base,kind:'sales' as const,customerId:customer,productId:product,categoryId:category.id,paymentMethod:'CREDIT' as const};
+ const screen=await services.reportsService.read(org,salesQuery),exported=await services.reportsService.read(org,salesQuery,true);expect(screen.totalAmount).toBe('80.0000');expect(exported.rows).toEqual(screen.rows);
+ expect((await services.reportsService.read(org,{...salesQuery,minAmount:'0'})).totalAmount).toBe('100.0000');expect((await services.reportsService.read(org,{...salesQuery,maxAmount:'0'})).totalAmount).toBe('-20.0000');
+ expect((await services.reportsService.read(org,{...base,kind:'purchases',supplierId:supplier,productId:product,categoryId:category.id,paymentMethod:'CREDIT'})).totalAmount).toBe('80.0000');
+ expect((await services.reportsService.read(org,{...base,kind:'inventory',productId:product,categoryId:category.id,minQuantity:'1',maxQuantity:'999',search:'TREASURY'})).total).toBe(1);
+ await services.salesService.post(org,user,randomUUID(),{customerId:customer,warehouseId:warehouse,lines:[{productId:product,quantity:'1',unitPrice:'10',discount:'0'}],payments:[{method:'CASH',amount:'10',accountId:cash.id}],occurredAt:now()});
+ await services.expenseService.post(org,user,randomUUID(),{category:'Analytics',description:'Cash expense',amount:'10',paymentMethod:'CASH',accountId:cash.id,occurredAt:now()});
+ await services.expenseService.post(org,user,randomUUID(),{category:'Analytics',description:'Card exception',amount:'1',paymentMethod:'CARD',accountId:card.id,occurredAt:now()});
+ expect((await services.reportsService.read(org,{...base,kind:'expenses',accountId:cash.id,paymentMethod:'CASH',search:'Cash'})).totalAmount).toBe('10.0000');
+ expect((await services.reportsService.read(org,{...base,kind:'treasury',accountId:card.id,paymentMethod:'CARD',direction:'OUT'})).totalAmount).toBe('-1.0000');
+ await db.customer.update({where:{id:customer},data:{creditLimit:'1'}});
+ await db.salesReturn.create({data:{organizationId:org,customerId:customer,warehouseId:warehouse,actorUserId:user,reason:'Pending review',total:'1',status:'PENDING_APPROVAL',occurredAt:now()}});
+ await db.inventoryTransaction.create({data:{organizationId:org,warehouseId:warehouse,productId:product,type:'ADJUSTMENT',quantity:'-200',referenceType:'Legacy exception fixture',referenceId:randomUUID(),occurredAt:now()}});
+ await createSaleDraftService(db,()=>new Date('2026-01-01')).create(org,user,randomUUID(),{kind:'QUOTATION',customerId:customer,warehouseId:warehouse,lines:[{productId:product,quantity:'1',unitPrice:'10',discount:'0'}]});
+ const before=await db.treasuryTransaction.count({where:{organizationId:org}}),analytics=await services.reportsService.analytics(org,period);
+ const sum=(field:'sales'|'net')=>analytics.points.reduce((total,p)=>total+BigInt(p[field].replace('.','')),0n);expect(sum('sales')).toBe(900000n);expect(sum('net')).toBe(-10000n);
+ expect(analytics.exceptions).toEqual({negativeStock:1,expiredQuotations:1,pendingReturns:1,overCreditLimit:1,negativeAccounts:1});
+ await db.customer.update({where:{id:customer},data:{creditLimit:'0'}});expect((await services.reportsService.analytics(org,period)).exceptions.overCreditLimit).toBe(0);
+ expect(await db.treasuryTransaction.count({where:{organizationId:org}})).toBe(before);
+ expect((await services.reportsService.choices(org)).products.some(p=>p.id===product)).toBe(true);
+ await branchContext.run({warehouseIds:[]},async()=>{await expect(services.reportsService.analytics(org,period)).rejects.toThrow('BRANCH_FORBIDDEN');expect((await services.reportsService.choices(org)).accounts).toEqual([]);});
+ expect((await services.reportsService.analytics(other,period)).points.every(p=>p.sales==='0.0000'&&p.net==='0.0000')).toBe(true);
+});
+
+it('reverses original accounts after a default change without duplicate replacement posting',async()=>{
+ const a=await account('100'),b=await account('100');
+ const input={supplierId:supplier,warehouseId:warehouse,lines:[{productId:product,quantity:'2',unitCost:'10'}],payments:[{method:'CASH' as const,amount:'20',accountId:a.id}],occurredAt:now()};
+ const bought=await services.purchaseService.post(org,user,randomUUID(),input);if(!bought.ok)throw Error(bought.reason);
+ const sold=await sale();const refundInput={saleId:sold.id,lines:[{saleLineId:sold.lines[0]!.id,quantity:'1'}],payments:[{method:'CASH' as const,amount:'10',accountId:a.id}],reason,occurredAt:now()};
+ const refund=await services.invoiceReturnService.post(org,user,randomUUID(),refundInput);if(!refund.ok)throw Error(refund.reason);
+ await treasury.updateAccount(org,user,b.id,{version:1,makeDefault:true,reason});
+ const purchaseKey=randomUUID(),returnKey=randomUUID(),replacement={...input,payments:[{method:'CASH' as const,amount:'20',accountId:b.id}]},refundReplacement={...refundInput,payments:[{method:'CASH' as const,amount:'10',accountId:b.id}]};
+ expect(await services.purchaseRevisionService.revise(org,user,bought.purchase.id,purchaseKey,replacement)).toMatchObject({ok:true});
+ expect(await services.returnRevisionService.revise(org,user,refund.salesReturn.id,returnKey,refundReplacement)).toMatchObject({ok:true});
+ const count=await db.treasuryTransaction.count({where:{organizationId:org}});
+ expect(await services.purchaseRevisionService.revise(org,user,bought.purchase.id,purchaseKey,replacement)).toMatchObject({ok:true,replayed:true});
+ expect(await services.returnRevisionService.revise(org,user,refund.salesReturn.id,returnKey,refundReplacement)).toMatchObject({ok:true,replayed:true});
+ expect(await db.treasuryTransaction.count({where:{organizationId:org}})).toBe(count);
+ const reversed=await db.treasuryTransaction.findMany({where:{organizationId:org,type:{in:['PURCHASE_PAYMENT_REVERSAL','RETURN_REFUND_REVERSAL']}}});expect(reversed).toHaveLength(2);expect(reversed.every(row=>row.accountId===a.id)).toBe(true);
+ expect(await balances()).toMatchObject({[a.id]:'100.0000',[b.id]:'70.0000'});
+});
+
+it('posts an explicit no-invoice refund account only after Finance confirmation and replays once',async()=>{
+ await account('100');const target=await account('100'),wrong=await account('0','CARD');
+ const before=await db.inventoryTransaction.count({where:{organizationId:org}}),cashBefore=await balances();
+ const submitted=await services.noInvoiceReturnService.submit(org,user,randomUUID(),{customerId:customer,warehouseId:warehouse,lines:[{productId:product,quantity:'1',unitPrice:'10'}],payments:[{method:'CASH',amount:'10'}],reason,itemCondition:'Unworn',occurredAt:now()});if(!submitted.ok)throw Error(submitted.reason);
+ expect(await balances()).toEqual(cashBefore);expect(await db.inventoryTransaction.count({where:{organizationId:org}})).toBe(before);
+ await expect(services.noInvoiceApprovalService.approve(org,user,submitted.salesReturn.id,{CASH:wrong.id})).rejects.toMatchObject({reason:'ACCOUNT_UNAVAILABLE'});
+ expect(await balances()).toEqual(cashBefore);
+ expect(await services.noInvoiceApprovalService.approve(org,user,submitted.salesReturn.id,{CASH:target.id})).toMatchObject({ok:true});
+ expect(await services.noInvoiceApprovalService.approve(org,user,submitted.salesReturn.id,{CASH:wrong.id})).toMatchObject({ok:true});
+ const entries=await db.treasuryTransaction.findMany({where:{organizationId:org,type:'RETURN_REFUND'}});expect(entries).toHaveLength(1);expect(entries[0]!.accountId).toBe(target.id);expect((await balances())[target.id]).toBe('90.0000');expect(await db.inventoryTransaction.count({where:{organizationId:org}})).toBe(before+1);
 });

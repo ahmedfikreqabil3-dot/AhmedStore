@@ -55,7 +55,7 @@ it('blocks unreadable saved commands and allows retrying a failed accounts read'
 
 it('renders empty and archived directories and safe fallback ledger movement descriptions',async()=>{
   vi.mocked(readJson).mockResolvedValueOnce({accounts:[]});const view=mount();await screen.findByText('لا توجد خزائن. أضف خزينة للبدء.');view.unmount();
-  vi.mocked(readJson).mockImplementation(async(path,init)=>path==='/treasury/accounts'?{accounts:[{...accounts[0],active:false}]}:path.includes('/ledger?')?{...ledger,total:0,rows:[]}:respond(path,init));await ready();expect(screen.getByText(/مؤرشفة/)).toBeVisible();click('كشف حركة خزينة المحل');await screen.findByText('لا توجد حركات في هذه الصفحة.');
+  vi.mocked(readJson).mockImplementation(async(path,init)=>path==='/treasury/accounts'?{accounts:[{...accounts[0],active:false}]}:path.includes('/ledger?')?{...ledger,total:0,rows:[]}:respond(path,init));await ready();expect(screen.getByText(/مؤرشفة/,{selector:'td'})).toBeVisible();click('كشف حركة خزينة المحل');await screen.findByText('لا توجد حركات في هذه الصفحة.');
   vi.mocked(readJson).mockImplementation(async(path,init)=>path.includes('/ledger?')?{...ledger,rows:[{...ledger.rows[0],type:'HISTORICAL_MOVEMENT'}]}:respond(path,init));click('تحديث الأرصدة');await screen.findByText('HISTORICAL_MOVEMENT');
 });
 

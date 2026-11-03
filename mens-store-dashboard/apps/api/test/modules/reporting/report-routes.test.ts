@@ -5,7 +5,7 @@ import { registerReportRoutes } from '../../../src/modules/reporting/report-rout
 const id = 'ab8ce3b4-3af9-4f30-a650-e635dd6b1c80';
 const result = { kind: 'sales' as const, from: new Date('2026-11-01'), to: new Date('2026-11-02'), total: 1, totalAmount: '9007199254740993.0001', totalQuantity: null, limit: 25, offset: 0, rows: [{ id, occurredAt: new Date('2026-11-01'), label: '=1+1', reference: id, amount: '9007199254740993.0001', quantity: null }] };
 function setup(role: 'ADMIN'|'MANAGER'|'FINANCE'|'CASHIER'|'WAREHOUSE'|null = 'ADMIN', configured = true) {
-  const app = Fastify(), service = { read: vi.fn(async () => result) };
+  const app = Fastify(), service = { read: vi.fn(async () => result),choices:vi.fn(async()=>({customers:[],suppliers:[],products:[],categories:[],accounts:[]})),analytics:vi.fn(async()=>({from:result.from,to:result.to,points:[],exceptions:{negativeStock:0,expiredQuotations:0,pendingReturns:0,overCreditLimit:0,negativeAccounts:0}})) };
   registerReportRoutes(app, { service: configured ? service : undefined, authenticate: async () => role ? { ok: true, token: 'test', user: { id, organizationId: id, email: 'test@example.test', name: 'Test', role } } : { ok: false, reason: 'UNAUTHENTICATED' } });
   return { app, service };
 }
@@ -32,4 +32,9 @@ it('validates queries and exports all filtered results as exact text cells witho
       service.read.mockRejectedValueOnce(Error('unexpected'));expect((await app.inject(url+query)).statusCode).toBe(500);
     } finally { await app.close(); }
   }
+});
+
+it('guards analytics/options and bounds analytics periods',async()=>{
+ for(const role of [null,'CASHIER','WAREHOUSE'] as const){const {app}=setup(role);expect((await app.inject('/api/v1/reports/analytics?from=2026-01-01&to=2026-01-02')).statusCode).toBe(role?403:401);await app.close();}
+ const {app,service}=setup();expect((await app.inject('/api/v1/reports/options')).statusCode).toBe(200);expect((await app.inject('/api/v1/reports/analytics?from=2026-01-01&to=2026-01-02')).statusCode).toBe(200);expect(service.analytics).toHaveBeenCalled();expect((await app.inject('/api/v1/reports/analytics?from=2025-01-01&to=2027-01-01')).statusCode).toBe(400);await app.close();
 });
